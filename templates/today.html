@@ -59,6 +59,7 @@
     gap:1px;background:var(--line);
     border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:34px;
   }
+  .stats.stats-2{grid-template-columns:repeat(2,1fr)}
   .stat{background:var(--paper-2);padding:14px 16px;text-align:center}
   .stat b{font-family:"IBM Plex Sans",sans-serif;font-weight:600;font-size:1.9rem;display:block;line-height:1}
   .stat span{font-family:"IBM Plex Mono",monospace;font-size:.62rem;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-soft)}
@@ -150,6 +151,10 @@
   .ad-toggle.open .chev{transform:rotate(180deg)}
   #ads-region{display:none}
   #ads-region.open{display:block}
+  /* Ad cards inside the collapsed region: kill ALL animation so they don't
+     get stuck invisible (the entrance fade "plays" while hidden otherwise). */
+  #ads-region .card{animation:none !important;opacity:1 !important}
+  #ads-region .sender,#ads-region .recipient{animation:none !important;background-size:100% 100% !important}
   @keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
   @keyframes highlight{from{background-size:0% 100%}to{background-size:100% 100%}}
   @media(max-width:520px){.stats{grid-template-columns:1fr 1fr 1fr}.stat b{font-size:1.5rem}}
@@ -167,13 +172,11 @@
 
   <p class="summary" id="summary"></p>
 
-  <div class="stats">
-    <div class="stat"><b id="s-total">0</b><span>Pieces</span></div>
-    <div class="stat flag"><b id="s-action">0</b><span>Need action</span></div>
-    <div class="stat"><b id="s-ads">0</b><span>Ads / junk</span></div>
+  <div class="stats stats-2">
+    <div class="stat"><b id="s-mail">0</b><span>Mail</span></div>
+    <div class="stat"><b id="s-packages">0</b><span>Packages</span></div>
   </div>
 
-  <p class="section-label">Packages first, then mail by importance</p>
   <div id="items"></div>
 </div>
 
@@ -295,10 +298,9 @@ function render(){
   const packages = all.filter(i=>i.type==="package");
   const mail = all.filter(i=>i.type!=="package");
 
-  // stats (mail pieces only for ads/action; total counts everything)
-  document.getElementById("s-total").textContent  = all.length;
-  document.getElementById("s-action").textContent = mail.filter(i=>i.action_needed).length + packages.length;
-  document.getElementById("s-ads").textContent    = mail.filter(i=>i.is_advertisement).length;
+  // stats: mail pieces vs packages
+  document.getElementById("s-mail").textContent     = mail.length;
+  document.getElementById("s-packages").textContent = packages.length;
 
   // mail: real before ads, then importance desc
   mail.sort((a,b)=>{
