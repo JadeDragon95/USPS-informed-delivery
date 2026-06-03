@@ -77,6 +77,21 @@
     animation:rise .5s ease backwards;
   }
   .card:hover{transform:translateY(-2px);box-shadow:0 14px 30px -18px rgba(35,32,27,.5)}
+  
+  /* Modified styling to smoothly dim ad elements uniformly */
+  .card.is-ad{
+    opacity:.55;
+    background:rgba(251, 248, 241, 0.6);
+    border-style:dashed;
+    box-shadow:none;
+  }
+  .card.is-ad:hover{
+    opacity:.85;
+    transform:none;
+    box-shadow:var(--shadow);
+  }
+  .is-ad .sender{font-style:italic}
+
   .icon{
     font-size:1.6rem;line-height:1;flex:0 0 auto;
     width:42px;height:42px;display:grid;place-items:center;
@@ -125,37 +140,18 @@
   .lvl-notable{ border-left-color:var(--notable) }    .lvl-notable .tag.imp{background:var(--notable)}
   .lvl-urgent{ border-left-color:var(--urgent) }      .lvl-urgent .tag.imp{background:var(--urgent)}
   .pkg-card{border-left-color:var(--teal)}
-  .is-ad{opacity:.62}
-  .is-ad .sender{font-style:italic}
+  
   .stamp{
     position:absolute;top:14px;right:16px;
     font-family:"IBM Plex Mono",monospace;font-size:.6rem;font-weight:600;
     letter-spacing:.18em;color:var(--stamp);
     border:1.5px solid var(--stamp);border-radius:4px;padding:2px 6px;
-    transform:rotate(4deg);opacity:.8;
+    transform:rotate(4deg);opacity:.6;
   }
   .empty{
     text-align:center;padding:60px 20px;color:var(--ink-soft);
     font-family:"Fraunces",serif;font-size:1.3rem;
   }
-  .ad-toggle{
-    width:100%;margin:6px 0 14px;padding:12px 16px;
-    background:var(--paper-2);border:1px dashed var(--line);border-radius:10px;
-    font-family:"IBM Plex Mono",monospace;font-size:.72rem;font-weight:600;
-    letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft);
-    cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;
-    transition:background .15s ease,color .15s ease;
-  }
-  .ad-toggle:hover{background:var(--paper);color:var(--ink)}
-  .ad-toggle .chev{transition:transform .2s ease}
-  .ad-toggle.open .chev{transform:rotate(180deg)}
-  
-  /* FIX: Ensure ad-region blocks display cleanly and override hidden layout anomalies */
-  #ads-region{display:none}
-  #ads-region.open{display:block}
-  #ads-region .card{animation:none !important;opacity:1 !important;transform:none !important}
-  #ads-region .sender,#ads-region .recipient{animation:none !important;background-size:100% 100% !important}
-  
   @keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
   @keyframes highlight{from{background-size:0% 100%}to{background-size:100% 100%}}
   @media(max-width:520px){.stats{grid-template-columns:1fr 1fr 1fr}.stat b{font-size:1.5rem}}
@@ -239,23 +235,19 @@ function packageCard(it, i){
   return card;
 }
 
-function mailCard(it, i, noAnim){
+function mailCard(it, i){
   const lvl = levelOf(it.importance);
   const icon = CATEGORY_ICON[it.category] || CATEGORY_ICON.default;
   const card = document.createElement("div");
   card.className = `card ${lvl.cls}` + (it.is_advertisement ? " is-ad" : "");
+  card.style.animationDelay = (i*60)+"ms";
   
-  if(noAnim){
-    card.style.animation = "none";
-    card.style.opacity = "1";
-  } else {
-    card.style.animationDelay = (i*60)+"ms";
-  }
   const known = it.recipient && it.recipient !== "unknown";
   const pcolor = colorFor(it.recipient);
   const recipientEl = known
     ? `<span class="recipient" style="--pcolor:${pcolor}">${escapeHtml(it.recipient)}</span>`
     : `<span class="recipient unknown">Addressee not detected</span>`;
+  
   card.innerHTML = `
     ${it.is_advertisement ? `<div class="stamp">AD</div>` : ""}
     <div class="icon">${icon}</div>
@@ -273,16 +265,11 @@ function mailCard(it, i, noAnim){
       <p class="desc">${escapeHtml(it.summary)}</p>
       <div class="tags" style="margin-top:10px">
         <span class="tag cat">${escapeHtml(it.category)}</span>
-        <span class="tag conf">confidence: ${escapeHtml(it.confidence)}</span>
       </div>
     </div>`;
+    
   card.querySelectorAll(".sender,.recipient").forEach(el=>{
-    if(noAnim){
-      el.style.animation = "none";
-      el.style.backgroundSize = "100% 100%";
-    } else {
-      el.style.animationDelay = (i*60 + 220)+"ms";
-    }
+    el.style.animationDelay = (i*60 + 220)+"ms";
   });
   return card;
 }
@@ -313,34 +300,11 @@ function render(){
   }
 
   let idx = 0;
+  // Packages pinned at the very top
   packages.forEach(it => wrap.appendChild(packageCard(it, idx++)));
 
-  const realMail = mail.filter(i => !i.is_advertisement);
-  const ads = mail.filter(i => i.is_advertisement);
-  realMail.forEach(it => wrap.appendChild(mailCard(it, idx++)));
-
-  if(ads.length){
-    const btn = document.createElement("button");
-    btn.className = "ad-toggle";
-    const word = ads.length === 1 ? "ad" : "ads";
-    btn.innerHTML = `<span>Show ${ads.length} ${word} / junk</span><span class="chev">▾</span>`;
-
-    const region = document.createElement("div");
-    region.id = "ads-region";
-    
-    // FIX: Changed third parameter to false to keep initialization state in line with DOM updates
-    ads.forEach(it => region.appendChild(mailCard(it, idx++, false)));
-
-    btn.addEventListener("click", () => {
-      const open = region.classList.toggle("open");
-      btn.classList.toggle("open", open);
-      btn.querySelector("span").textContent =
-        open ? `Hide ${ads.length} ${word} / junk` : `Show ${ads.length} ${word} / junk`;
-    });
-
-    wrap.appendChild(btn);
-    wrap.appendChild(region);
-  }
+  // Real mail followed naturally by the lower opacity ads
+  mail.forEach(it => wrap.appendChild(mailCard(it, idx++)));
 }
 
 render();
