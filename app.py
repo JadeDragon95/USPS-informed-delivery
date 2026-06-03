@@ -168,18 +168,45 @@ def build_headline(items):
 
 
 def send_push(headline, items):
-    """Fire an Ntfy notification. Tapping it opens the /today page."""
+    """Fire an Ntfy notification. Tapping it opens the /today page.
+    Body leads with PACKAGES (most actionable), then the mail count."""
     if not NTFY_TOPIC:
         return
-    pkg_count = len([i for i in items if i.get("type") == "package"])
-    action_count = len([i for i in items if i.get("action_needed")])
-    # A compact second line so the notification is glanceable.
-    detail = []
-    if action_count:
-        detail.append(f"{action_count} need action")
-    if pkg_count:
-        detail.append(f"{pkg_count} package{'s' if pkg_count != 1 else ''}")
-    body = headline + ("\n" + " · ".join(detail) if detail else "")
+    packages = [i for i in items if i.get("type") == "package"]
+    mail = [i for i in items if i.get("type") != "package"]
+    action_count = len([i for i in mail if i.get("action_needed")])
+
+    def name_list(group):
+        names = []
+        for p in group:
+            s = p.get("sender", "")
+            if s and s.lower() != "unknown" and s not in names:
+                names.append(s)
+        if not names:
+            return ""
+        if len(names) == 1:
+            return names[0]
+        if len(names) == 2:
+            return names[0] + " and " + names[1]
+        return ", ".join(names[:-1]) + ", and " + names[-1]
+
+    # Build the message with packages FIRST.
+    lines = []
+    if packages:
+        senders = name_list(packages)
+        word = "package" if len(packages) == 1 else "packages"
+        line = f"📦 {len(packages)} {word}"
+        if senders:
+            line += f" from {senders}"
+        lines.append(line)
+    if mail:
+        word = "piece" if len(mail) == 1 else "pieces"
+        line = f"✉️ {len(mail)} {word} of mail"
+        if action_count:
+            line += f" ({action_count} need action)"
+        lines.append(line)
+    body = "\n".join(lines) if lines else "No mail or packages today."
+
     try:
         requests.post(
             f"https://ntfy.sh/{NTFY_TOPIC}",
