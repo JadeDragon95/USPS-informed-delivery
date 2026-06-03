@@ -79,18 +79,18 @@
   .card:hover{transform:translateY(-2px);box-shadow:0 14px 30px -18px rgba(35,32,27,.5)}
   
   /* Modified styling to smoothly dim ad elements uniformly */
-  .card.is-ad{
+  .card.promo-mail{
     opacity:.55;
     background:rgba(251, 248, 241, 0.6);
     border-style:dashed;
     box-shadow:none;
   }
-  .card.is-ad:hover{
+  .card.promo-mail:hover{
     opacity:.85;
     transform:none;
     box-shadow:var(--shadow);
   }
-  .is-ad .sender{font-style:italic}
+  .promo-mail .sender{font-style:italic}
 
   .icon{
     font-size:1.6rem;line-height:1;flex:0 0 auto;
@@ -239,7 +239,7 @@ function mailCard(it, i){
   const lvl = levelOf(it.importance);
   const icon = CATEGORY_ICON[it.category] || CATEGORY_ICON.default;
   const card = document.createElement("div");
-  card.className = `card ${lvl.cls}` + (it.is_advertisement ? " is-ad" : "");
+  card.className = `card ${lvl.cls}` + (it.is_advertisement ? " promo-mail" : "");
   card.style.animationDelay = (i*60)+"ms";
   
   const known = it.recipient && it.recipient !== "unknown";
