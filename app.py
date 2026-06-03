@@ -200,8 +200,11 @@ def send_push(headline, items):
             line += f" from {senders}"
         lines.append(line)
     if mail:
+        senders = name_list(mail)
         word = "piece" if len(mail) == 1 else "pieces"
         line = f"✉️ {len(mail)} {word} of mail"
+        if senders:
+            line += f" from {senders}"
         if action_count:
             line += f" ({action_count} need action)"
         lines.append(line)
@@ -288,7 +291,11 @@ def today():
         "items": LATEST_MAIL["items"],
     })
     html = html.replace("__MAIL_DATA__", payload)
-    return Response(html, mimetype="text/html")
+    resp = Response(html, mimetype="text/html")
+    # WHY no-cache: forces the browser to fetch the latest page every time,
+    # so design/code changes show up immediately instead of a stale cached copy.
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    return resp
 
 
 @app.route("/today.json")
