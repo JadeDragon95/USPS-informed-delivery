@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Today's Mail · Briefing</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,900&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#f4efe5;
+    --paper-2:#fbf8f1;
+    --ink:#23201b;
+    --ink-soft:#5d564b;
+    --line:#ddd4c4;
+    --stamp:#c0402c;
+    --urgent:#c0402c;
+    --important:#cf7430;
+    --notable:#b08611;
+    --low:#8a8275;
+    --teal:#2f6b63;
+    --hl:#f3d77e;
+    --shadow:0 1px 0 rgba(0,0,0,.04), 0 8px 24px -16px rgba(35,32,27,.35);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:"IBM Plex Sans",sans-serif;
+    background:var(--paper);
+    background-image:
+      radial-gradient(circle at 18% 12%, rgba(192,64,44,.05), transparent 40%),
+      radial-gradient(circle at 85% 0%, rgba(47,107,99,.05), transparent 38%);
+    color:var(--ink);
+    line-height:1.5;
+    padding:clamp(20px,5vw,64px) clamp(16px,5vw,48px) 80px;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:820px;margin:0 auto}
+  .masthead{border-bottom:3px double var(--ink);padding-bottom:18px;margin-bottom:28px}
+  .dateline{
+    font-family:"IBM Plex Mono",monospace;
+    font-size:.72rem;letter-spacing:.18em;text-transform:uppercase;
+    color:var(--ink-soft);display:flex;justify-content:space-between;
+    flex-wrap:wrap;gap:8px;
+  }
+  .title{
+    font-family:"Fraunces",serif;font-weight:900;
+    font-size:clamp(2.4rem,7vw,3.6rem);line-height:.95;
+    letter-spacing:-.02em;margin:10px 0 0;
+  }
+  .summary{
+    font-family:"IBM Plex Sans",sans-serif;font-weight:500;
+    font-size:clamp(1.1rem,3vw,1.4rem);
+    line-height:1.4;margin:22px 0 26px;
+    padding-left:16px;border-left:4px solid var(--stamp);
+  }
+  .stats{
+    display:grid;grid-template-columns:repeat(3,1fr);
+    gap:1px;background:var(--line);
+    border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:34px;
+  }
+  .stat{background:var(--paper-2);padding:14px 16px;text-align:center}
+  .stat b{font-family:"IBM Plex Sans",sans-serif;font-weight:600;font-size:1.9rem;display:block;line-height:1}
+  .stat span{font-family:"IBM Plex Mono",monospace;font-size:.62rem;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-soft)}
+  .stat.flag b{color:var(--stamp)}
+  .section-label{
+    font-family:"IBM Plex Mono",monospace;font-size:.68rem;
+    letter-spacing:.2em;text-transform:uppercase;color:var(--ink-soft);margin:0 0 12px;
+  }
+  .card{
+    position:relative;background:var(--paper-2);
+    border:1px solid var(--line);border-left:5px solid var(--low);
+    border-radius:12px;padding:18px 20px;margin-bottom:14px;
+    box-shadow:var(--shadow);display:flex;gap:16px;align-items:flex-start;
+    transition:transform .15s ease, box-shadow .15s ease;
+    animation:rise .5s ease backwards;
+  }
+  .card:hover{transform:translateY(-2px);box-shadow:0 14px 30px -18px rgba(35,32,27,.5)}
+  .icon{
+    font-size:1.6rem;line-height:1;flex:0 0 auto;
+    width:42px;height:42px;display:grid;place-items:center;
+    background:var(--paper);border:1px solid var(--line);border-radius:10px;
+  }
+  .body{flex:1;min-width:0}
+  .row1{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+  .parties{display:flex;flex-direction:column;gap:8px}
+  .field-label{
+    font-family:"IBM Plex Mono",monospace;font-size:.58rem;font-weight:600;
+    letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft);
+    display:block;margin-bottom:2px;
+  }
+  .sender{
+    font-family:"IBM Plex Sans",sans-serif;font-weight:600;
+    font-size:1.2rem;letter-spacing:-.01em;line-height:1.2;display:inline;
+    background:linear-gradient(transparent 58%, var(--hl) 58%, var(--hl) 94%, transparent 94%);
+    background-size:0% 100%;background-repeat:no-repeat;padding:0 2px;
+    animation:highlight .6s ease forwards;
+  }
+  .recipient{
+    font-family:"IBM Plex Sans",sans-serif;font-weight:600;
+    font-size:1.2rem;letter-spacing:-.01em;line-height:1.2;display:inline;
+    background:linear-gradient(transparent 58%, var(--pcolor,#e7e0d2) 58%, var(--pcolor,#e7e0d2) 94%, transparent 94%);
+    background-size:0% 100%;background-repeat:no-repeat;padding:0 2px;
+    animation:highlight .6s ease forwards;
+  }
+  .recipient.unknown{font-weight:500;font-style:italic;font-size:1rem;color:var(--ink-soft);background:none;animation:none}
+  .desc{margin-top:8px;font-size:.95rem;color:#3f3a32}
+  .tracking{
+    margin-top:10px;font-family:"IBM Plex Mono",monospace;font-size:.78rem;
+    color:var(--teal);text-decoration:none;display:inline-block;
+    border-bottom:1px dotted var(--teal);
+  }
+  .tags{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+  .tag{
+    font-family:"IBM Plex Mono",monospace;font-size:.62rem;font-weight:600;
+    letter-spacing:.08em;text-transform:uppercase;padding:3px 8px;border-radius:999px;white-space:nowrap;
+  }
+  .tag.imp{color:#fff}
+  .tag.cat{background:var(--paper);border:1px solid var(--line);color:var(--ink-soft)}
+  .tag.conf{background:transparent;border:1px dashed var(--line);color:var(--ink-soft)}
+  .tag.action{background:var(--stamp);color:#fff}
+  .tag.pkg{background:var(--teal);color:#fff}
+  .lvl-low   { border-left-color:var(--low) }        .lvl-low   .tag.imp{background:var(--low)}
+  .lvl-notable{ border-left-color:var(--notable) }    .lvl-notable .tag.imp{background:var(--notable)}
+  .lvl-urgent{ border-left-color:var(--urgent) }      .lvl-urgent .tag.imp{background:var(--urgent)}
+  .pkg-card{border-left-color:var(--teal)}
+  .is-ad{opacity:.62}
+  .is-ad .sender{font-style:italic}
+  .stamp{
+    position:absolute;top:14px;right:16px;
+    font-family:"IBM Plex Mono",monospace;font-size:.6rem;font-weight:600;
+    letter-spacing:.18em;color:var(--stamp);
+    border:1.5px solid var(--stamp);border-radius:4px;padding:2px 6px;
+    transform:rotate(4deg);opacity:.8;
+  }
+  .empty{
+    text-align:center;padding:60px 20px;color:var(--ink-soft);
+    font-family:"Fraunces",serif;font-size:1.3rem;
+  }
+  @keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+  @keyframes highlight{from{background-size:0% 100%}to{background-size:100% 100%}}
+  @media(max-width:520px){.stats{grid-template-columns:1fr 1fr 1fr}.stat b{font-size:1.5rem}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="masthead">
+    <div class="dateline">
+      <span id="dateline-left">Daily Mail Briefing</span>
+      <span id="dateline-right"></span>
+    </div>
+    <h1 class="title">Today's&nbsp;Mail</h1>
+  </header>
+
+  <p class="summary" id="summary"></p>
+
+  <div class="stats">
+    <div class="stat"><b id="s-total">0</b><span>Pieces</span></div>
+    <div class="stat flag"><b id="s-action">0</b><span>Need action</span></div>
+    <div class="stat"><b id="s-ads">0</b><span>Ads / junk</span></div>
+  </div>
+
+  <p class="section-label">Packages first, then mail by importance</p>
+  <div id="items"></div>
+</div>
+
+<script>
+/* Data is injected live by the Flask server (see app.py /today route).
+   The __MAIL_DATA__ placeholder is replaced with today's JSON. */
+const MAIL_DATA = __MAIL_DATA__;
+
+const CATEGORY_ICON = {
+  medical:"🏥", advertising:"📣", financial:"💳", bill:"🧾",
+  government:"🏛️", legal:"⚖️", personal:"✉️", package:"📦",
+  shipping:"📦", subscription:"📰", tax:"📊", insurance:"🛡️",
+  bank:"🏦", utility:"💡", other:"📬", default:"📬"
+};
+
+/* 3-level importance: 3=urgent/red, 2=notable, 1=low */
+function levelOf(n){
+  if(n>=3) return {cls:"lvl-urgent",  label:"Important"};
+  if(n===2) return {cls:"lvl-notable", label:"Notable"};
+  return        {cls:"lvl-low",     label:"Low"};
+}
+
+const PERSON_HL = ["#bcd6f0","#bfe3c0","#f3c6d2","#d8c8ef","#f6cda3","#a8ddd6"];
+function colorFor(name){
+  if(!name || name==="unknown") return null;
+  let h=0;
+  for(let i=0;i<name.length;i++) h=(h*31 + name.charCodeAt(i))>>>0;
+  return PERSON_HL[h % PERSON_HL.length];
+}
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g,c=>(
+    {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]
+  ));
+}
+
+function packageCard(it, i){
+  const card = document.createElement("div");
+  card.className = "card pkg-card";
+  card.style.animationDelay = (i*60)+"ms";
+  const tracking = (it.tracking_number && it.tracking_number!=="unknown")
+    ? `<a class="tracking" href="https://tools.usps.com/go/TrackConfirmAction?tLabels=${encodeURIComponent(it.tracking_number)}" target="_blank" rel="noopener">Track ${escapeHtml(it.tracking_number)}</a>`
+    : "";
+  card.innerHTML = `
+    <div class="icon">📦</div>
+    <div class="body">
+      <div class="row1">
+        <div class="parties">
+          <div><span class="field-label">From</span><span class="sender">${escapeHtml(it.sender||"unknown")}</span></div>
+        </div>
+        <div class="tags">
+          <span class="tag pkg">Package</span>
+          ${it.expected ? `<span class="tag imp" style="background:var(--teal)">${escapeHtml(it.expected)}</span>` : ""}
+        </div>
+      </div>
+      <p class="desc">${escapeHtml(it.summary||"Incoming package")}</p>
+      ${tracking}
+    </div>`;
+  return card;
+}
+
+function mailCard(it, i){
+  const lvl = levelOf(it.importance);
+  const icon = CATEGORY_ICON[it.category] || CATEGORY_ICON.default;
+  const card = document.createElement("div");
+  card.className = `card ${lvl.cls}` + (it.is_advertisement ? " is-ad" : "");
+  card.style.animationDelay = (i*60)+"ms";
+  const known = it.recipient && it.recipient !== "unknown";
+  const pcolor = colorFor(it.recipient);
+  const recipientEl = known
+    ? `<span class="recipient" style="--pcolor:${pcolor}">${escapeHtml(it.recipient)}</span>`
+    : `<span class="recipient unknown">Addressee not detected</span>`;
+  card.innerHTML = `
+    ${it.is_advertisement ? `<div class="stamp">AD</div>` : ""}
+    <div class="icon">${icon}</div>
+    <div class="body">
+      <div class="row1">
+        <div class="parties">
+          <div><span class="field-label">For</span>${recipientEl}</div>
+          <div><span class="field-label">From</span><span class="sender">${escapeHtml(it.sender)}</span></div>
+        </div>
+        <div class="tags">
+          ${it.action_needed ? `<span class="tag action">Action</span>` : ""}
+          <span class="tag imp">${lvl.label}</span>
+        </div>
+      </div>
+      <p class="desc">${escapeHtml(it.summary)}</p>
+      <div class="tags" style="margin-top:10px">
+        <span class="tag cat">${escapeHtml(it.category)}</span>
+        <span class="tag conf">confidence: ${escapeHtml(it.confidence)}</span>
+      </div>
+    </div>`;
+  card.querySelectorAll(".sender,.recipient").forEach(el=>{
+    el.style.animationDelay = (i*60 + 220)+"ms";
+  });
+  return card;
+}
+
+function render(){
+  document.getElementById("summary").textContent = MAIL_DATA.summary || "";
+  document.getElementById("dateline-right").textContent =
+    new Date().toLocaleDateString(undefined,{weekday:"long",year:"numeric",month:"long",day:"numeric"});
+
+  const all = [...(MAIL_DATA.items||[])];
+  const packages = all.filter(i=>i.type==="package");
+  const mail = all.filter(i=>i.type!=="package");
+
+  // stats (mail pieces only for ads/action; total counts everything)
+  document.getElementById("s-total").textContent  = all.length;
+  document.getElementById("s-action").textContent = mail.filter(i=>i.action_needed).length + packages.length;
+  document.getElementById("s-ads").textContent    = mail.filter(i=>i.is_advertisement).length;
+
+  // mail: real before ads, then importance desc
+  mail.sort((a,b)=>{
+    if(a.is_advertisement!==b.is_advertisement) return a.is_advertisement?1:-1;
+    return (b.importance||0)-(a.importance||0);
+  });
+
+  const wrap = document.getElementById("items");
+  wrap.innerHTML = "";
+
+  if(all.length===0){
+    wrap.innerHTML = `<div class="empty">No mail or packages detected today. 📭</div>`;
+    return;
+  }
+
+  let idx = 0;
+  // packages pinned to top (most actionable)
+  packages.forEach(it => wrap.appendChild(packageCard(it, idx++)));
+  mail.forEach(it => wrap.appendChild(mailCard(it, idx++)));
+}
+
+render();
+</script>
+</body>
+</html>
