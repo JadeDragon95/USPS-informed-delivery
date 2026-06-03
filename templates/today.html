@@ -235,12 +235,19 @@ function packageCard(it, i){
   return card;
 }
 
-function mailCard(it, i){
+function mailCard(it, i, noAnim){
   const lvl = levelOf(it.importance);
   const icon = CATEGORY_ICON[it.category] || CATEGORY_ICON.default;
   const card = document.createElement("div");
   card.className = `card ${lvl.cls}` + (it.is_advertisement ? " is-ad" : "");
-  card.style.animationDelay = (i*60)+"ms";
+  // Cards inside the collapsed ads region must NOT use the entrance animation:
+  // it would "play" while hidden and leave them stuck invisible on reveal.
+  if(noAnim){
+    card.style.animation = "none";
+    card.style.opacity = "1";
+  } else {
+    card.style.animationDelay = (i*60)+"ms";
+  }
   const known = it.recipient && it.recipient !== "unknown";
   const pcolor = colorFor(it.recipient);
   const recipientEl = known
@@ -267,7 +274,14 @@ function mailCard(it, i){
       </div>
     </div>`;
   card.querySelectorAll(".sender,.recipient").forEach(el=>{
-    el.style.animationDelay = (i*60 + 220)+"ms";
+    if(noAnim){
+      // Snap the highlight swipe to its finished state — no delayed animation
+      // that would fail to play while the card was hidden.
+      el.style.animation = "none";
+      el.style.backgroundSize = "100% 100%";
+    } else {
+      el.style.animationDelay = (i*60 + 220)+"ms";
+    }
   });
   return card;
 }
@@ -320,7 +334,7 @@ function render(){
 
     const region = document.createElement("div");
     region.id = "ads-region";
-    ads.forEach(it => region.appendChild(mailCard(it, idx++)));
+    ads.forEach(it => region.appendChild(mailCard(it, idx++, true)));
 
     btn.addEventListener("click", () => {
       const open = region.classList.toggle("open");
