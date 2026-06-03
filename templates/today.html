@@ -77,21 +77,6 @@
     animation:rise .5s ease backwards;
   }
   .card:hover{transform:translateY(-2px);box-shadow:0 14px 30px -18px rgba(35,32,27,.5)}
-  
-  /* Modified styling to smoothly dim ad elements uniformly */
-  .card.promo-mail{
-    opacity:.55;
-    background:rgba(251, 248, 241, 0.6);
-    border-style:dashed;
-    box-shadow:none;
-  }
-  .card.promo-mail:hover{
-    opacity:.85;
-    transform:none;
-    box-shadow:var(--shadow);
-  }
-  .promo-mail .sender{font-style:italic}
-
   .icon{
     font-size:1.6rem;line-height:1;flex:0 0 auto;
     width:42px;height:42px;display:grid;place-items:center;
@@ -140,18 +125,36 @@
   .lvl-notable{ border-left-color:var(--notable) }    .lvl-notable .tag.imp{background:var(--notable)}
   .lvl-urgent{ border-left-color:var(--urgent) }      .lvl-urgent .tag.imp{background:var(--urgent)}
   .pkg-card{border-left-color:var(--teal)}
-  
+  .is-ad{opacity:.62}
+  .is-ad .sender{font-style:italic}
   .stamp{
     position:absolute;top:14px;right:16px;
     font-family:"IBM Plex Mono",monospace;font-size:.6rem;font-weight:600;
     letter-spacing:.18em;color:var(--stamp);
     border:1.5px solid var(--stamp);border-radius:4px;padding:2px 6px;
-    transform:rotate(4deg);opacity:.6;
+    transform:rotate(4deg);opacity:.8;
   }
   .empty{
     text-align:center;padding:60px 20px;color:var(--ink-soft);
     font-family:"Fraunces",serif;font-size:1.3rem;
   }
+  .ad-toggle{
+    width:100%;margin:6px 0 14px;padding:12px 16px;
+    background:var(--paper-2);border:1px dashed var(--line);border-radius:10px;
+    font-family:"IBM Plex Mono",monospace;font-size:.72rem;font-weight:600;
+    letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft);
+    cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;
+    transition:background .15s ease,color .15s ease;
+  }
+  .ad-toggle:hover{background:var(--paper);color:var(--ink)}
+  .ad-toggle .chev{transition:transform .2s ease}
+  .ad-toggle.open .chev{transform:rotate(180deg)}
+  #ads-region{display:none}
+  #ads-region.open{display:block}
+  /* Ad cards inside the collapsed region: kill ALL animation so they don't
+     get stuck invisible (the entrance fade "plays" while hidden otherwise). */
+  #ads-region .card{animation:none !important;opacity:1 !important}
+  #ads-region .sender,#ads-region .recipient{animation:none !important;background-size:100% 100% !important}
   @keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
   @keyframes highlight{from{background-size:0% 100%}to{background-size:100% 100%}}
   @media(max-width:520px){.stats{grid-template-columns:1fr 1fr 1fr}.stat b{font-size:1.5rem}}
@@ -179,8 +182,8 @@
 
 <script>
 /* Data is injected live by the Flask server (see app.py /today route).
-   The __MAIL_DATA__ placeholder is replaced with today's JSON. */
-const MAIL_DATA = __MAIL_DATA__;
+   The {"summary": "You have 4 pieces of mail from Highmark, Edward Jones, Telljpower, and OnStar and 1 package from SHIPHERO today.", "items": [{"type": "package", "sender": "SHIPHERO LLC-FULFILLMENT FW 2", "tracking_number": "9261290336128796938211", "expected": "Today", "summary": "Inbound package."}, {"type": "mail", "recipient": "CHARLIE NORTON", "sender": "Highmark", "category": "medical", "is_advertisement": false, "importance": 2, "action_needed": false, "summary": "Highmark program info.", "confidence": "medium"}, {"type": "mail", "recipient": "PHYLLIS J NORTON", "sender": "Edward Jones", "category": "financial", "is_advertisement": false, "importance": 2, "action_needed": true, "summary": "Financial correspondence.", "confidence": "high"}, {"type": "mail", "recipient": "DONNY J NORTON", "sender": "Telljpower survey", "category": "advertising", "is_advertisement": true, "importance": 1, "action_needed": false, "summary": "Sweepstakes offer.", "confidence": "medium"}, {"type": "mail", "recipient": "YULONG CHEN", "sender": "OnStar", "category": "advertising", "is_advertisement": true, "importance": 1, "action_needed": false, "summary": "OnStar promo.", "confidence": "high"}]} placeholder is replaced with today's JSON. */
+const MAIL_DATA = {"summary": "You have 4 pieces of mail from Highmark, Edward Jones, Telljpower, and OnStar and 1 package from SHIPHERO today.", "items": [{"type": "package", "sender": "SHIPHERO LLC-FULFILLMENT FW 2", "tracking_number": "9261290336128796938211", "expected": "Today", "summary": "Inbound package."}, {"type": "mail", "recipient": "CHARLIE NORTON", "sender": "Highmark", "category": "medical", "is_advertisement": false, "importance": 2, "action_needed": false, "summary": "Highmark program info.", "confidence": "medium"}, {"type": "mail", "recipient": "PHYLLIS J NORTON", "sender": "Edward Jones", "category": "financial", "is_advertisement": false, "importance": 2, "action_needed": true, "summary": "Financial correspondence.", "confidence": "high"}, {"type": "mail", "recipient": "DONNY J NORTON", "sender": "Telljpower survey", "category": "advertising", "is_advertisement": true, "importance": 1, "action_needed": false, "summary": "Sweepstakes offer.", "confidence": "medium"}, {"type": "mail", "recipient": "YULONG CHEN", "sender": "OnStar", "category": "advertising", "is_advertisement": true, "importance": 1, "action_needed": false, "summary": "OnStar promo.", "confidence": "high"}]};
 
 const CATEGORY_ICON = {
   medical:"🏥", advertising:"📣", financial:"💳", bill:"🧾",
@@ -193,7 +196,7 @@ const CATEGORY_ICON = {
 function levelOf(n){
   if(n>=3) return {cls:"lvl-urgent",  label:"Important"};
   if(n===2) return {cls:"lvl-notable", label:"Notable"};
-  return        {cls:"lvl-low",      label:"Low"};
+  return        {cls:"lvl-low",     label:"Low"};
 }
 
 const PERSON_HL = ["#bcd6f0","#bfe3c0","#f3c6d2","#d8c8ef","#f6cda3","#a8ddd6"];
@@ -235,19 +238,24 @@ function packageCard(it, i){
   return card;
 }
 
-function mailCard(it, i){
+function mailCard(it, i, noAnim){
   const lvl = levelOf(it.importance);
   const icon = CATEGORY_ICON[it.category] || CATEGORY_ICON.default;
   const card = document.createElement("div");
-  card.className = `card ${lvl.cls}` + (it.is_advertisement ? " promo-mail" : "");
-  card.style.animationDelay = (i*60)+"ms";
-  
+  card.className = `card ${lvl.cls}` + (it.is_advertisement ? " is-ad" : "");
+  // Cards inside the collapsed ads region must NOT use the entrance animation:
+  // it would "play" while hidden and leave them stuck invisible on reveal.
+  if(noAnim){
+    card.style.animation = "none";
+    card.style.opacity = "1";
+  } else {
+    card.style.animationDelay = (i*60)+"ms";
+  }
   const known = it.recipient && it.recipient !== "unknown";
   const pcolor = colorFor(it.recipient);
   const recipientEl = known
     ? `<span class="recipient" style="--pcolor:${pcolor}">${escapeHtml(it.recipient)}</span>`
     : `<span class="recipient unknown">Addressee not detected</span>`;
-  
   card.innerHTML = `
     ${it.is_advertisement ? `<div class="stamp">AD</div>` : ""}
     <div class="icon">${icon}</div>
@@ -265,11 +273,18 @@ function mailCard(it, i){
       <p class="desc">${escapeHtml(it.summary)}</p>
       <div class="tags" style="margin-top:10px">
         <span class="tag cat">${escapeHtml(it.category)}</span>
+        <span class="tag conf">confidence: ${escapeHtml(it.confidence)}</span>
       </div>
     </div>`;
-    
   card.querySelectorAll(".sender,.recipient").forEach(el=>{
-    el.style.animationDelay = (i*60 + 220)+"ms";
+    if(noAnim){
+      // Snap the highlight swipe to its finished state — no delayed animation
+      // that would fail to play while the card was hidden.
+      el.style.animation = "none";
+      el.style.backgroundSize = "100% 100%";
+    } else {
+      el.style.animationDelay = (i*60 + 220)+"ms";
+    }
   });
   return card;
 }
@@ -283,9 +298,11 @@ function render(){
   const packages = all.filter(i=>i.type==="package");
   const mail = all.filter(i=>i.type!=="package");
 
+  // stats: mail pieces vs packages
   document.getElementById("s-mail").textContent     = mail.length;
   document.getElementById("s-packages").textContent = packages.length;
 
+  // mail: real before ads, then importance desc
   mail.sort((a,b)=>{
     if(a.is_advertisement!==b.is_advertisement) return a.is_advertisement?1:-1;
     return (b.importance||0)-(a.importance||0);
@@ -300,14 +317,73 @@ function render(){
   }
 
   let idx = 0;
-  // Packages pinned at the very top
+  // packages pinned to top (most actionable)
   packages.forEach(it => wrap.appendChild(packageCard(it, idx++)));
 
-  // Real mail followed naturally by the lower opacity ads
-  mail.forEach(it => wrap.appendChild(mailCard(it, idx++)));
+  // real mail (non-ads) shown normally
+  const realMail = mail.filter(i => !i.is_advertisement);
+  const ads = mail.filter(i => i.is_advertisement);
+  realMail.forEach(it => wrap.appendChild(mailCard(it, idx++)));
+
+  // ads tucked behind a collapsible toggle — present but quiet, one tap away.
+  // WHY collapsed-not-hidden: keeps the morning glance clean, but if the AI
+  // ever mislabels a real piece as an ad, it's still reachable, not lost.
+  if(ads.length){
+    const btn = document.createElement("button");
+    btn.className = "ad-toggle";
+    const word = ads.length === 1 ? "ad" : "ads";
+    btn.innerHTML = `<span>Show ${ads.length} ${word} / junk</span><span class="chev">▾</span>`;
+
+    const region = document.createElement("div");
+    region.id = "ads-region";
+    ads.forEach(it => region.appendChild(mailCard(it, idx++, true)));
+
+    btn.addEventListener("click", () => {
+      const open = region.classList.toggle("open");
+      btn.classList.toggle("open", open);
+      btn.querySelector("span").textContent =
+        open ? `Hide ${ads.length} ${word} / junk` : `Show ${ads.length} ${word} / junk`;
+    });
+
+    wrap.appendChild(btn);
+    wrap.appendChild(region);
+  }
 }
 
 render();
+
+/* -------------------------------------------------------------------------
+   Anti-stale-page defense (the iOS bfcache problem)
+   -------------------------------------------------------------------------
+   iOS Safari aggressively shows a frozen snapshot of the page when you
+   switch back to it from another app, even when Cache-Control says no.
+   We can't always prevent that snapshot, but we CAN react to it:
+   when the tab becomes visible again, ask the server for the latest data
+   and re-render. So even if the cached image flashes briefly, it gets
+   overwritten with fresh content immediately.
+
+   We also listen for the 'pageshow' event with event.persisted, which
+   fires specifically when the page was restored from bfcache.
+   ------------------------------------------------------------------------- */
+async function refreshFromServer(){
+  try{
+    // Add a cache-busting query param so the request is always fresh.
+    const r = await fetch("/today.json?t=" + Date.now(), {cache:"no-store"});
+    if(!r.ok) return;
+    const fresh = await r.json();
+    MAIL_DATA.summary = fresh.summary;
+    MAIL_DATA.items   = fresh.items;
+    render();
+  }catch(e){ /* offline or transient — keep showing what we have */ }
+}
+
+document.addEventListener("visibilitychange", () => {
+  if(document.visibilityState === "visible") refreshFromServer();
+});
+window.addEventListener("pageshow", e => {
+  // e.persisted === true means Safari just restored a cached snapshot.
+  if(e.persisted) refreshFromServer();
+});
 </script>
 </body>
 </html>
