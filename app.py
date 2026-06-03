@@ -16,6 +16,7 @@ the /today page reads it. New mail each day overwrites it (today-only view).
 """
 
 import os
+import re
 import json
 import base64
 import hashlib
@@ -71,7 +72,7 @@ def analyze_mail(images, body_text):
         "Return ONLY a JSON object with a single key \"items\", an array.\n\n"
         "For each MAIL piece in the images, an object with EXACTLY:\n"
         '  "type": "mail",\n'
-        '  "recipient": string (addressee or "unknown", Use the name as it is, do not use any Honorifics & Titles like Mr.)  ,\n'
+        '  "recipient": string (addressee or "unknown"),\n'
         '  "sender": string (SHORT readable name like "IRS", not the full '
         'address block; or "unknown"),\n'
         '  "category": one of "financial","government","medical","personal",'
@@ -227,6 +228,107 @@ def send_push(headline, items):
         print(f"  ⚠️  Push failed (not fatal): {e}")
 
 
+def parse_delivery_alert(subject, body_text):
+    """
+    Pull sender, expected time, and tracking number out of a USPS delivery
+    alert email using plain regex — NO AI call needed.
+
+    WHY no AI: these emails follow a strict USPS template, so regex is
+    instant, free, and more reliable than asking a model to extract fields.
+    Returns a dict {sender, time, tracking, is_today} or None if it can't
+    parse confidently (in which case we skip the alert rather than guess).
+
+    Example subject:
+      "USPS® Expected Delivery on Saturday, May 16, 2026 arriving by 9:00pm 9234..."
+    Example body:
+      "...Your item is out for delivery on May 16, 2026 at 7:49 am in
+       SHINGLEHOUSE, PA 16748. USPS expects to deliver your package today
+       by 9:00pm. Tracking Number: 9234690376107700453486
+       Package Shipped from: BEAUTYLISH, INC."
+    """
+    text = (subject or "") + "\n" + (body_text or "")
+
+    # Tracking number: long digit string (USPS = 20+ digits)
+    tracking_match = re.search(r"\b(\d{20,})\b", text)
+    tracking = tracking_match.group(1) if tracking_match else None
+
+    # Sender: "Package Shipped from: NAME" or "Shipped from: NAME"
+    sender_match = re.search(r"(?:Package\s+)?Shipped from:\s*(.+?)(?:\n|$)",
+                             text, re.IGNORECASE)
+    sender = sender_match.group(1).strip().rstrip(".,") if sender_match else None
+
+    # Expected time: "by 9:00pm" / "by 9:00 PM"
+    time_match = re.search(r"by\s+(\d{1,2}:\d{2}\s*(?:am|pm|AM|PM))", text)
+    expected_time = time_match.group(1).lower().replace(" ", "") if time_match else None
+
+    # Is today vs future day: USPS body literally says "today" for same-day
+    # ("USPS expects to deliver your package today by ...").
+    is_today = bool(re.search(r"\bdeliver\s+your\s+package\s+today\b", text, re.IGNORECASE))
+
+    # For non-today: pull the weekday out of the subject ("Expected Delivery on Saturday,...")
+    day_match = re.search(
+        r"Expected Delivery on\s+(Sunday|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday)",
+        text, re.IGNORECASE,
+    )
+    weekday = day_match.group(1).capitalize() if day_match else None
+
+    if not tracking or not sender:
+        # Can't confidently identify the package — bail rather than guess.
+        return None
+    return {
+        "sender": sender,
+        "tracking": tracking,
+        "expected_time": expected_time,    # e.g. "9:00pm" or None
+        "is_today": is_today,
+        "weekday": weekday,                # e.g. "Saturday" or None
+    }
+
+
+def send_delivery_alert_push(alert):
+    """Send a HIGH-priority push for an individual delivery alert.
+    Tapping it opens the USPS tracking page for THAT package."""
+    if not NTFY_TOPIC:
+        return
+
+    # Title: "Your package from X is/will be out for delivery today/on Saturday"
+    if alert["is_today"]:
+        title = f"Your package from {alert['sender']} is out for delivery today"
+    elif alert["weekday"]:
+        title = f"Your package from {alert['sender']} will be out for delivery on {alert['weekday']}"
+    else:
+        # Fallback if we couldn't parse the day — still useful, just less specific
+        title = f"Your package from {alert['sender']} is out for delivery"
+
+    # Body: arrival window + tracking number
+    body_parts = []
+    if alert["expected_time"]:
+        body_parts.append(f"Arriving by {alert['expected_time']}")
+    body_parts.append(f"Tracking: {alert['tracking']}")
+    body = " · ".join(body_parts)
+
+    # USPS tracking deep link — tapping the notification jumps right to status.
+    usps_url = (
+        "https://tools.usps.com/go/TrackConfirmAction?tLabels="
+        + alert["tracking"]
+    )
+
+    try:
+        requests.post(
+            f"https://ntfy.sh/{NTFY_TOPIC}",
+            data=body.encode("utf-8"),
+            headers={
+                "Title": title,
+                "Tags": "package",
+                "Click": usps_url,
+                "Priority": "high",     # bypasses Do Not Disturb on most setups
+            },
+            timeout=10,
+        )
+        print(f"  🔔 Delivery alert pushed: {alert['sender']} / {alert['tracking']}")
+    except Exception as e:
+        print(f"  ⚠️  Delivery alert push failed: {e}")
+
+
 @app.route("/mail-arrived", methods=["POST"])
 def mail_arrived():
     data = request.form
@@ -238,9 +340,35 @@ def mail_arrived():
         return "Forbidden", 403
 
     print("\n" + "=" * 60)
-    print(f"📬 NEW EMAIL — {data.get('subject', '(no subject)')}")
+    subject = data.get("subject", "")
+    print(f"📬 NEW EMAIL — {subject or '(no subject)'}")
     print("=" * 60)
 
+    # --- Route by email type (cheap subject check, no AI) ---
+    # USPS sends two distinct kinds of email:
+    #   1) "Daily Digest" — the morning summary (process for /today, full pipeline)
+    #   2) "Expected Delivery" / "Out for Delivery" — per-package alerts (push only)
+    # WHY split here: delivery alerts are real-time moments, not summary data,
+    # so they shouldn't overwrite /today or cost an OpenAI call.
+    body_text = data.get("stripped-text") or data.get("body-plain") or ""
+    subj_lower = subject.lower()
+    is_delivery_alert = (
+        "expected delivery" in subj_lower
+        or "out for delivery" in subj_lower
+        or "arriving by" in subj_lower
+    ) and "daily digest" not in subj_lower
+
+    if is_delivery_alert:
+        print("  🚚 Detected: USPS delivery alert (push-only, no /today update)")
+        alert = parse_delivery_alert(subject, body_text)
+        if alert:
+            send_delivery_alert_push(alert)
+        else:
+            print("  ⚠️  Could not parse delivery alert reliably — skipped.")
+        print("=" * 60 + "\n")
+        return "OK", 200
+
+    # --- Otherwise: full Daily Digest pipeline ---
     images = []
     for key in request.files:
         f = request.files[key]
@@ -255,7 +383,6 @@ def mail_arrived():
     if not images and not body_text:
         print("  (Nothing to analyze.)")
         return "OK", 200
-
     print(f"\n  🤖 Sending {len(images)} image(s) + body text to {OPENAI_MODEL}...")
     items = analyze_mail(images, body_text)
     headline = build_headline(items)
