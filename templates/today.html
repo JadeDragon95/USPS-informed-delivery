@@ -273,7 +273,6 @@ function mailCard(it, i, noAnim){
       <p class="desc">${escapeHtml(it.summary)}</p>
       <div class="tags" style="margin-top:10px">
         <span class="tag cat">${escapeHtml(it.category)}</span>
-        <span class="tag conf">confidence: ${escapeHtml(it.confidence)}</span>
       </div>
     </div>`;
   card.querySelectorAll(".sender,.recipient").forEach(el=>{
