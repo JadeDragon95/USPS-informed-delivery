@@ -149,12 +149,13 @@
   .ad-toggle:hover{background:var(--paper);color:var(--ink)}
   .ad-toggle .chev{transition:transform .2s ease}
   .ad-toggle.open .chev{transform:rotate(180deg)}
+  
+  /* FIX: Ensure ad-region blocks display cleanly and override hidden layout anomalies */
   #ads-region{display:none}
   #ads-region.open{display:block}
-  /* Ad cards inside the collapsed region: kill ALL animation so they don't
-     get stuck invisible (the entrance fade "plays" while hidden otherwise). */
-  #ads-region .card{animation:none !important;opacity:1 !important}
+  #ads-region .card{animation:none !important;opacity:1 !important;transform:none !important}
   #ads-region .sender,#ads-region .recipient{animation:none !important;background-size:100% 100% !important}
+  
   @keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
   @keyframes highlight{from{background-size:0% 100%}to{background-size:100% 100%}}
   @media(max-width:520px){.stats{grid-template-columns:1fr 1fr 1fr}.stat b{font-size:1.5rem}}
@@ -196,7 +197,7 @@ const CATEGORY_ICON = {
 function levelOf(n){
   if(n>=3) return {cls:"lvl-urgent",  label:"Important"};
   if(n===2) return {cls:"lvl-notable", label:"Notable"};
-  return        {cls:"lvl-low",     label:"Low"};
+  return        {cls:"lvl-low",      label:"Low"};
 }
 
 const PERSON_HL = ["#bcd6f0","#bfe3c0","#f3c6d2","#d8c8ef","#f6cda3","#a8ddd6"];
@@ -243,8 +244,7 @@ function mailCard(it, i, noAnim){
   const icon = CATEGORY_ICON[it.category] || CATEGORY_ICON.default;
   const card = document.createElement("div");
   card.className = `card ${lvl.cls}` + (it.is_advertisement ? " is-ad" : "");
-  // Cards inside the collapsed ads region must NOT use the entrance animation:
-  // it would "play" while hidden and leave them stuck invisible on reveal.
+  
   if(noAnim){
     card.style.animation = "none";
     card.style.opacity = "1";
@@ -278,8 +278,6 @@ function mailCard(it, i, noAnim){
     </div>`;
   card.querySelectorAll(".sender,.recipient").forEach(el=>{
     if(noAnim){
-      // Snap the highlight swipe to its finished state — no delayed animation
-      // that would fail to play while the card was hidden.
       el.style.animation = "none";
       el.style.backgroundSize = "100% 100%";
     } else {
@@ -298,11 +296,9 @@ function render(){
   const packages = all.filter(i=>i.type==="package");
   const mail = all.filter(i=>i.type!=="package");
 
-  // stats: mail pieces vs packages
   document.getElementById("s-mail").textContent     = mail.length;
   document.getElementById("s-packages").textContent = packages.length;
 
-  // mail: real before ads, then importance desc
   mail.sort((a,b)=>{
     if(a.is_advertisement!==b.is_advertisement) return a.is_advertisement?1:-1;
     return (b.importance||0)-(a.importance||0);
@@ -317,17 +313,12 @@ function render(){
   }
 
   let idx = 0;
-  // packages pinned to top (most actionable)
   packages.forEach(it => wrap.appendChild(packageCard(it, idx++)));
 
-  // real mail (non-ads) shown normally
   const realMail = mail.filter(i => !i.is_advertisement);
   const ads = mail.filter(i => i.is_advertisement);
   realMail.forEach(it => wrap.appendChild(mailCard(it, idx++)));
 
-  // ads tucked behind a collapsible toggle — present but quiet, one tap away.
-  // WHY collapsed-not-hidden: keeps the morning glance clean, but if the AI
-  // ever mislabels a real piece as an ad, it's still reachable, not lost.
   if(ads.length){
     const btn = document.createElement("button");
     btn.className = "ad-toggle";
@@ -336,7 +327,9 @@ function render(){
 
     const region = document.createElement("div");
     region.id = "ads-region";
-    ads.forEach(it => region.appendChild(mailCard(it, idx++, true)));
+    
+    // FIX: Changed third parameter to false to keep initialization state in line with DOM updates
+    ads.forEach(it => region.appendChild(mailCard(it, idx++, false)));
 
     btn.addEventListener("click", () => {
       const open = region.classList.toggle("open");
