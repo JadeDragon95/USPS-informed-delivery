@@ -1,17 +1,31 @@
 """
-USPS Mail Webhook — Step 2: Read the scans with OpenAI
-=======================================================
-Now that we've seen the payload structure, this version:
+USPS Mail Webhook — Step 3: Structured JSON per mail piece
+===========================================================
+What this version does:
   1. Verifies the request really came from Mailgun (signature check)
   2. Pulls the JPEG scans out of the email attachments
-  3. Sends them to OpenAI's vision model for a summary
-  4. Prints that summary in the Railway logs
-  5. Returns 200 OK fast (so Mailgun doesn't retry)
+  3. Asks OpenAI to return STRUCTURED JSON — one object per mail piece
+  4. Builds a one-line headline from that JSON (code counts, not the AI)
+  5. Prints both the headline and the per-piece JSON in the Railway logs
+  6. Returns 200 OK fast (so Mailgun doesn't retry)
 
-Push notification + web page come later — one layer at a time.
+THE SCHEMA (one object per piece):
+  recipient        — who the mail is addressed to
+  sender           — who it's from (best guess from the envelope)
+  category         — financial | government | medical | personal |
+                     advertising | package | other
+  is_advertisement — true/false
+  is_package       — true/false
+  importance       — 1 (junk/ad), 2 (normal), 3 (important: bills, govt,
+                     tax, medical, legal, checks)
+  action_needed    — true/false (does this likely need you to DO something)
+  summary          — one short human line for the web page
+  confidence       — high | medium | low (these are blurry envelope scans,
+                     so honest uncertainty beats a confident wrong guess)
 """
 
 import os
+import json
 import base64
 import hashlib
 import hmac
@@ -24,17 +38,11 @@ app = Flask(__name__)
 MAILGUN_SIGNING_KEY = os.environ.get("MAILGUN_SIGNING_KEY", "")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 
-# Vision-capable, fast, and cheap — ideal for a daily batch of mail scans.
-# Bump to "gpt-5.5" if the scans ever come out too blurry to read.
-OPENAI_MODEL = "gpt-5.4-mini"
+OPENAI_MODEL = "gpt-5.4-mini"  # bump to "gpt-5.5" if scans are hard to read
 
 
 def verify_mailgun_signature(token, timestamp, signature):
-    """
-    WHY: your webhook URL is public. Without this check, anyone could POST
-    fake 'emails' to it. Mailgun proves it's really them with a signature
-    we recompute and compare.
-    """
+    """WHY: the URL is public; this proves the POST is really from Mailgun."""
     if not MAILGUN_SIGNING_KEY:
         print("⚠️  WARNING: No MAILGUN_SIGNING_KEY set. Skipping signature check.")
         return True
@@ -46,31 +54,43 @@ def verify_mailgun_signature(token, timestamp, signature):
     return hmac.compare_digest(expected, signature)
 
 
-def summarize_mail_images(images):
+def analyze_mail_images(images):
     """
-    Sends the scan images to OpenAI and returns a text summary.
+    Sends all scans to OpenAI in ONE call and gets back a list of structured
+    mail pieces (Python dicts matching THE SCHEMA above).
 
     'images' is a list of (filename, raw_bytes) tuples.
-    WHY one call with all images: cheaper and faster than looping, and the
-    model can cross-reference pieces (e.g. spot two from the same sender).
+    Returns: a list of dicts, or [] if something went wrong.
     """
     if not OPENAI_API_KEY:
-        return "⚠️  No OPENAI_API_KEY set — skipping the AI summary for now."
+        print("⚠️  No OPENAI_API_KEY set — skipping the AI analysis.")
+        return []
 
-    # WHY instructions-before-images: vision models read the content list in
-    # order, so priming them with the task first improves what they extract.
-    content = [{
-        "type": "text",
-        "text": (
-            "These are today's USPS Informed Delivery mail scans. "
-            "For each piece of mail, identify the sender if readable, briefly "
-            "describe what it looks like, and flag anything important such as "
-            "bills, government mail, medical mail, or checks. Note any packages "
-            "separately. Keep it short and scannable — one line per piece."
-        ),
-    }]
+    # WHY instructions-before-images: the model reads content in order, so
+    # priming it with the task + exact schema first improves accuracy.
+    instructions = (
+        "These are today's USPS Informed Delivery mail scans — grayscale "
+        "images of envelope exteriors and any package notices. "
+        "Analyze EACH image as a separate piece of mail. "
+        "Return ONLY a JSON object with a single key \"pieces\", whose value "
+        "is an array. Each array element must have EXACTLY these keys:\n"
+        '  "recipient": string (who it is addressed to, or "unknown"),\n'
+        '  "sender": string (who it is from, best guess, or "unknown"),\n'
+        '  "category": one of "financial","government","medical","personal",'
+        '"advertising","package","other",\n'
+        '  "is_advertisement": boolean,\n'
+        '  "is_package": boolean,\n'
+        '  "importance": integer 1, 2, or 3 '
+        "(3 = important like bills/government/tax/medical/legal/checks; "
+        "2 = normal personal mail; 1 = junk or advertising),\n"
+        '  "action_needed": boolean (likely requires you to do something),\n'
+        '  "summary": string (one short line describing the piece),\n'
+        '  "confidence": one of "high","medium","low" '
+        "(these scans are blurry — be honest about uncertainty).\n"
+        "Do not add any keys. Do not include any text outside the JSON."
+    )
 
-    # Attach each image as a base64 data URL (how the API accepts inline images).
+    content = [{"type": "text", "text": instructions}]
     for filename, raw_bytes in images:
         b64 = base64.b64encode(raw_bytes).decode("utf-8")
         content.append({
@@ -81,6 +101,9 @@ def summarize_mail_images(images):
     payload = {
         "model": OPENAI_MODEL,
         "messages": [{"role": "user", "content": content}],
+        # WHY response_format json_object: forces OpenAI to return valid JSON
+        # with no ```fences or chatty preamble — the #1 cause of parse errors.
+        "response_format": {"type": "json_object"},
     }
 
     try:
@@ -91,15 +114,60 @@ def summarize_mail_images(images):
                 "Content-Type": "application/json",
             },
             json=payload,
-            timeout=60,  # vision calls take a few seconds; don't hang forever
+            timeout=90,
         )
         resp.raise_for_status()
-        data = resp.json()
-        return data["choices"][0]["message"]["content"]
+        raw_text = resp.json()["choices"][0]["message"]["content"]
+        parsed = json.loads(raw_text)            # safe: json mode guarantees JSON
+        return parsed.get("pieces", [])
     except Exception as e:
-        # WHY catch broadly: a failed AI call shouldn't crash the webhook and
-        # make Mailgun retry. We log the error and still return 200 below.
-        return f"❌ OpenAI call failed: {e}"
+        print(f"❌ OpenAI call/parse failed: {e}")
+        return []
+
+
+def build_headline(pieces):
+    """
+    Builds the one-line summary FROM the JSON. Code does the counting (not the
+    AI) because counting must be exact. Returns a single string.
+
+    Example: "You have 3 pieces of mail from Voya, PSECU, and Seneca, and
+              1 package from Amazon today."
+    """
+    letters = [p for p in pieces if not p.get("is_package")]
+    packages = [p for p in pieces if p.get("is_package")]
+
+    def name_list(items):
+        # Unique sender names, preserving order, skipping unknowns.
+        names = []
+        for p in items:
+            s = p.get("sender", "unknown")
+            if s and s.lower() != "unknown" and s not in names:
+                names.append(s)
+        if not names:
+            return ""
+        if len(names) == 1:
+            return names[0]
+        return ", ".join(names[:-1]) + ", and " + names[-1]
+
+    parts = []
+    if letters:
+        senders = name_list(letters)
+        piece_word = "piece" if len(letters) == 1 else "pieces"
+        line = f"{len(letters)} {piece_word} of mail"
+        if senders:
+            line += f" from {senders}"
+        parts.append(line)
+    if packages:
+        senders = name_list(packages)
+        pkg_word = "package" if len(packages) == 1 else "packages"
+        line = f"{len(packages)} {pkg_word}"
+        if senders:
+            line += f" from {senders}"
+        parts.append(line)
+
+    if not parts:
+        return "No mail detected today."
+    return "You have " + ", and ".join(parts) + " today."
 
 
 @app.route("/mail-arrived", methods=["POST"])
@@ -118,8 +186,6 @@ def mail_arrived():
     print("=" * 60)
 
     # --- 2. Pull the JPEG scans out of the attachments ---
-    # From the real USPS payload we saw: images arrive in request.files as
-    # attachment-1, attachment-2, etc., as image/jpeg.
     images = []
     for key in request.files:
         f = request.files[key]
@@ -129,19 +195,24 @@ def mail_arrived():
             print(f"  📎 Found image: {f.filename} ({len(raw)} bytes)")
 
     if not images:
-        print("  (No images in this email — nothing to summarize.)")
+        print("  (No images in this email — nothing to analyze.)")
         return "OK", 200
 
-    # --- 3. Send to OpenAI for a summary ---
+    # --- 3. Analyze into structured JSON ---
     print(f"\n  🤖 Sending {len(images)} image(s) to {OPENAI_MODEL}...")
-    summary = summarize_mail_images(images)
+    pieces = analyze_mail_images(images)
 
-    # --- 4. Print the result ---
-    print("\n--- 📋 TODAY'S MAIL SUMMARY ---")
-    print(summary)
+    # --- 4. Build the headline from the JSON (code counts, not the AI) ---
+    headline = build_headline(pieces)
+
+    # --- 5. Print both ---
+    print("\n--- 📋 ONE-LINE SUMMARY ---")
+    print(headline)
+    print("\n--- 🗂️  PER-PIECE JSON ---")
+    print(json.dumps(pieces, indent=2))
     print("=" * 60 + "\n")
 
-    # --- 5. Return 200 fast ---
+    # --- 6. Return 200 fast ---
     return "OK", 200
 
 
