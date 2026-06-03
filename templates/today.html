@@ -125,8 +125,8 @@
   .lvl-notable{ border-left-color:var(--notable) }    .lvl-notable .tag.imp{background:var(--notable)}
   .lvl-urgent{ border-left-color:var(--urgent) }      .lvl-urgent .tag.imp{background:var(--urgent)}
   .pkg-card{border-left-color:var(--teal)}
-  .is-ad{opacity:.62}
-  .is-ad .sender{font-style:italic}
+  .is-promo{opacity:.62}
+  .is-promo .sender{font-style:italic}
   .stamp{
     position:absolute;top:14px;right:16px;
     font-family:"IBM Plex Mono",monospace;font-size:.6rem;font-weight:600;
@@ -138,7 +138,7 @@
     text-align:center;padding:60px 20px;color:var(--ink-soft);
     font-family:"Fraunces",serif;font-size:1.3rem;
   }
-  .ad-toggle{
+  .promo-toggle{
     width:100%;margin:6px 0 14px;padding:12px 16px;
     background:var(--paper-2);border:1px dashed var(--line);border-radius:10px;
     font-family:"IBM Plex Mono",monospace;font-size:.72rem;font-weight:600;
@@ -146,15 +146,15 @@
     cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;
     transition:background .15s ease,color .15s ease;
   }
-  .ad-toggle:hover{background:var(--paper);color:var(--ink)}
-  .ad-toggle .chev{transition:transform .2s ease}
-  .ad-toggle.open .chev{transform:rotate(180deg)}
-  #ads-region{display:none}
-  #ads-region.open{display:block}
+  .promo-toggle:hover{background:var(--paper);color:var(--ink)}
+  .promo-toggle .chev{transition:transform .2s ease}
+  .promo-toggle.open .chev{transform:rotate(180deg)}
+  #promos-region{display:none}
+  #promos-region.open{display:block}
   /* Ad cards inside the collapsed region: kill ALL animation so they don't
      get stuck invisible (the entrance fade "plays" while hidden otherwise). */
-  #ads-region .card{animation:none !important;opacity:1 !important}
-  #ads-region .sender,#ads-region .recipient{animation:none !important;background-size:100% 100% !important}
+  #promos-region .card{animation:none !important;opacity:1 !important}
+  #promos-region .sender,#promos-region .recipient{animation:none !important;background-size:100% 100% !important}
   @keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
   @keyframes highlight{from{background-size:0% 100%}to{background-size:100% 100%}}
   @media(max-width:520px){.stats{grid-template-columns:1fr 1fr 1fr}.stat b{font-size:1.5rem}}
@@ -182,8 +182,8 @@
 
 <script>
 /* Data is injected live by the Flask server (see app.py /today route).
-   The {"summary": "You have 4 pieces of mail from Highmark, Edward Jones, Telljpower, and OnStar and 1 package from SHIPHERO today.", "items": [{"type": "package", "sender": "SHIPHERO LLC-FULFILLMENT FW 2", "tracking_number": "9261290336128796938211", "expected": "Today", "summary": "Inbound package."}, {"type": "mail", "recipient": "CHARLIE NORTON", "sender": "Highmark", "category": "medical", "is_advertisement": false, "importance": 2, "action_needed": false, "summary": "Highmark program info.", "confidence": "medium"}, {"type": "mail", "recipient": "PHYLLIS J NORTON", "sender": "Edward Jones", "category": "financial", "is_advertisement": false, "importance": 2, "action_needed": true, "summary": "Financial correspondence.", "confidence": "high"}, {"type": "mail", "recipient": "DONNY J NORTON", "sender": "Telljpower survey", "category": "advertising", "is_advertisement": true, "importance": 1, "action_needed": false, "summary": "Sweepstakes offer.", "confidence": "medium"}, {"type": "mail", "recipient": "YULONG CHEN", "sender": "OnStar", "category": "advertising", "is_advertisement": true, "importance": 1, "action_needed": false, "summary": "OnStar promo.", "confidence": "high"}]} placeholder is replaced with today's JSON. */
-const MAIL_DATA = {"summary": "You have 4 pieces of mail from Highmark, Edward Jones, Telljpower, and OnStar and 1 package from SHIPHERO today.", "items": [{"type": "package", "sender": "SHIPHERO LLC-FULFILLMENT FW 2", "tracking_number": "9261290336128796938211", "expected": "Today", "summary": "Inbound package."}, {"type": "mail", "recipient": "CHARLIE NORTON", "sender": "Highmark", "category": "medical", "is_advertisement": false, "importance": 2, "action_needed": false, "summary": "Highmark program info.", "confidence": "medium"}, {"type": "mail", "recipient": "PHYLLIS J NORTON", "sender": "Edward Jones", "category": "financial", "is_advertisement": false, "importance": 2, "action_needed": true, "summary": "Financial correspondence.", "confidence": "high"}, {"type": "mail", "recipient": "DONNY J NORTON", "sender": "Telljpower survey", "category": "advertising", "is_advertisement": true, "importance": 1, "action_needed": false, "summary": "Sweepstakes offer.", "confidence": "medium"}, {"type": "mail", "recipient": "YULONG CHEN", "sender": "OnStar", "category": "advertising", "is_advertisement": true, "importance": 1, "action_needed": false, "summary": "OnStar promo.", "confidence": "high"}]};
+   The __MAIL_DATA__ placeholder is replaced with today's JSON. */
+const MAIL_DATA = __MAIL_DATA__;
 
 const CATEGORY_ICON = {
   medical:"🏥", advertising:"📣", financial:"💳", bill:"🧾",
@@ -242,7 +242,7 @@ function mailCard(it, i, noAnim){
   const lvl = levelOf(it.importance);
   const icon = CATEGORY_ICON[it.category] || CATEGORY_ICON.default;
   const card = document.createElement("div");
-  card.className = `card ${lvl.cls}` + (it.is_advertisement ? " is-ad" : "");
+  card.className = `card ${lvl.cls}` + (it.is_advertisement ? " is-promo" : "");
   // Cards inside the collapsed ads region must NOT use the entrance animation:
   // it would "play" while hidden and leave them stuck invisible on reveal.
   if(noAnim){
@@ -257,7 +257,7 @@ function mailCard(it, i, noAnim){
     ? `<span class="recipient" style="--pcolor:${pcolor}">${escapeHtml(it.recipient)}</span>`
     : `<span class="recipient unknown">Addressee not detected</span>`;
   card.innerHTML = `
-    ${it.is_advertisement ? `<div class="stamp">AD</div>` : ""}
+    ${it.is_advertisement ? `<div class="stamp">PROMO</div>` : ""}
     <div class="icon">${icon}</div>
     <div class="body">
       <div class="row1">
@@ -320,29 +320,31 @@ function render(){
   // packages pinned to top (most actionable)
   packages.forEach(it => wrap.appendChild(packageCard(it, idx++)));
 
-  // real mail (non-ads) shown normally
+  // real mail (non-promotional) shown normally; promos go behind the toggle
   const realMail = mail.filter(i => !i.is_advertisement);
-  const ads = mail.filter(i => i.is_advertisement);
+  const promos   = mail.filter(i =>  i.is_advertisement);
   realMail.forEach(it => wrap.appendChild(mailCard(it, idx++)));
 
-  // ads tucked behind a collapsible toggle — present but quiet, one tap away.
+  // promo mail tucked behind a collapsible toggle — present but quiet.
   // WHY collapsed-not-hidden: keeps the morning glance clean, but if the AI
-  // ever mislabels a real piece as an ad, it's still reachable, not lost.
-  if(ads.length){
+  // ever mislabels a real piece as promotional, it's still reachable.
+  // WHY "promo" everywhere (not "ad"): browser ad-blockers hide any element
+  // with "ad" in its class/id/text, so we use neutral wording end-to-end.
+  if(promos.length){
     const btn = document.createElement("button");
-    btn.className = "ad-toggle";
-    const word = ads.length === 1 ? "ad" : "ads";
-    btn.innerHTML = `<span>Show ${ads.length} ${word} / junk</span><span class="chev">▾</span>`;
+    btn.className = "promo-toggle";
+    const word = promos.length === 1 ? "promo" : "promos";
+    btn.innerHTML = `<span>Show ${promos.length} ${word}</span><span class="chev">▾</span>`;
 
     const region = document.createElement("div");
-    region.id = "ads-region";
-    ads.forEach(it => region.appendChild(mailCard(it, idx++, true)));
+    region.id = "promos-region";
+    promos.forEach(it => region.appendChild(mailCard(it, idx++, true)));
 
     btn.addEventListener("click", () => {
       const open = region.classList.toggle("open");
       btn.classList.toggle("open", open);
       btn.querySelector("span").textContent =
-        open ? `Hide ${ads.length} ${word} / junk` : `Show ${ads.length} ${word} / junk`;
+        open ? `Hide ${promos.length} ${word}` : `Show ${promos.length} ${word}`;
     });
 
     wrap.appendChild(btn);
