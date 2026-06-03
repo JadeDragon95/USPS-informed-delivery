@@ -137,6 +137,19 @@
     text-align:center;padding:60px 20px;color:var(--ink-soft);
     font-family:"Fraunces",serif;font-size:1.3rem;
   }
+  .ad-toggle{
+    width:100%;margin:6px 0 14px;padding:12px 16px;
+    background:var(--paper-2);border:1px dashed var(--line);border-radius:10px;
+    font-family:"IBM Plex Mono",monospace;font-size:.72rem;font-weight:600;
+    letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft);
+    cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;
+    transition:background .15s ease,color .15s ease;
+  }
+  .ad-toggle:hover{background:var(--paper);color:var(--ink)}
+  .ad-toggle .chev{transition:transform .2s ease}
+  .ad-toggle.open .chev{transform:rotate(180deg)}
+  #ads-region{display:none}
+  #ads-region.open{display:block}
   @keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
   @keyframes highlight{from{background-size:0% 100%}to{background-size:100% 100%}}
   @media(max-width:520px){.stats{grid-template-columns:1fr 1fr 1fr}.stat b{font-size:1.5rem}}
@@ -290,7 +303,35 @@ function render(){
   let idx = 0;
   // packages pinned to top (most actionable)
   packages.forEach(it => wrap.appendChild(packageCard(it, idx++)));
-  mail.forEach(it => wrap.appendChild(mailCard(it, idx++)));
+
+  // real mail (non-ads) shown normally
+  const realMail = mail.filter(i => !i.is_advertisement);
+  const ads = mail.filter(i => i.is_advertisement);
+  realMail.forEach(it => wrap.appendChild(mailCard(it, idx++)));
+
+  // ads tucked behind a collapsible toggle — present but quiet, one tap away.
+  // WHY collapsed-not-hidden: keeps the morning glance clean, but if the AI
+  // ever mislabels a real piece as an ad, it's still reachable, not lost.
+  if(ads.length){
+    const btn = document.createElement("button");
+    btn.className = "ad-toggle";
+    const word = ads.length === 1 ? "ad" : "ads";
+    btn.innerHTML = `<span>Show ${ads.length} ${word} / junk</span><span class="chev">▾</span>`;
+
+    const region = document.createElement("div");
+    region.id = "ads-region";
+    ads.forEach(it => region.appendChild(mailCard(it, idx++)));
+
+    btn.addEventListener("click", () => {
+      const open = region.classList.toggle("open");
+      btn.classList.toggle("open", open);
+      btn.querySelector("span").textContent =
+        open ? `Hide ${ads.length} ${word} / junk` : `Show ${ads.length} ${word} / junk`;
+    });
+
+    wrap.appendChild(btn);
+    wrap.appendChild(region);
+  }
 }
 
 render();
