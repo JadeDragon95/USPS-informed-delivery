@@ -72,7 +72,7 @@ def analyze_mail(images, body_text):
         "Return ONLY a JSON object with a single key \"items\", an array.\n\n"
         "For each MAIL piece in the images, an object with EXACTLY:\n"
         '  "type": "mail",\n'
-        '  "recipient": string (addressee or "unknown"),\n'
+        '  "recipient": string (addressee or "unknown", use the name as it is, do not use Honorifics & Titles),\n'
         '  "sender": string (SHORT readable name like "IRS", not the full '
         'address block; or "unknown"),\n'
         '  "category": one of "financial","government","medical","personal",'
@@ -86,7 +86,7 @@ def analyze_mail(images, body_text):
         "honest).\n\n"
         "For each PACKAGE in the text, an object with EXACTLY:\n"
         '  "type": "package",\n'
-        '  "sender": string (the FROM: company),\n'
+        '  "sender": string (the FROM: company, "Unknown" if not listed),\n'
         '  "tracking_number": string (the long digit string or "unknown"),\n'
         '  "expected": string ("Today", "1-2 Days", or "unknown"),\n'
         '  "summary": string (one short line).\n\n'
