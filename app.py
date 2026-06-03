@@ -1,27 +1,19 @@
 """
-USPS Mail Webhook — Step 3: Structured JSON per mail piece
-===========================================================
-What this version does:
-  1. Verifies the request really came from Mailgun (signature check)
-  2. Pulls the JPEG scans out of the email attachments
-  3. Asks OpenAI to return STRUCTURED JSON — one object per mail piece
-  4. Builds a one-line headline from that JSON (code counts, not the AI)
-  5. Prints both the headline and the per-piece JSON in the Railway logs
-  6. Returns 200 OK fast (so Mailgun doesn't retry)
+USPS Mail Webhook — Step 4: Mail (from images) + Packages (from body text)
+===========================================================================
+Key insight this version handles: USPS package info is NOT in the scan
+images — it's TEXT in the email body ("Expected Today / FROM: ... / tracking#").
+So we now send BOTH the images AND the body text to OpenAI, and it returns
+two kinds of items:
 
-THE SCHEMA (one object per piece):
-  recipient        — who the mail is addressed to
-  sender           — who it's from (best guess from the envelope)
-  category         — financial | government | medical | personal |
-                     advertising | package | other
-  is_advertisement — true/false
-  is_package       — true/false
-  importance       — 1 (junk/ad), 2 (normal), 3 (important: bills, govt,
-                     tax, medical, legal, checks)
-  action_needed    — true/false (does this likely need you to DO something)
-  summary          — one short human line for the web page
-  confidence       — high | medium | low (these are blurry envelope scans,
-                     so honest uncertainty beats a confident wrong guess)
+  MAIL piece (from the envelope scans):
+    type="mail", recipient, sender, category, is_advertisement,
+    importance (1-3), action_needed, summary, confidence
+
+  PACKAGE (from the body text):
+    type="package", sender, tracking_number, expected, summary
+
+A "type" field tells our code which shape each item is.
 """
 
 import os
@@ -34,11 +26,9 @@ from flask import Flask, request
 
 app = Flask(__name__)
 
-# --- Secrets (set these in Railway → Variables; never hard-code them) ---
 MAILGUN_SIGNING_KEY = os.environ.get("MAILGUN_SIGNING_KEY", "")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
-
-OPENAI_MODEL = "gpt-5.4-mini"  # bump to "gpt-5.5" if scans are hard to read
+OPENAI_MODEL = "gpt-5.4-mini"
 
 
 def verify_mailgun_signature(token, timestamp, signature):
@@ -54,40 +44,47 @@ def verify_mailgun_signature(token, timestamp, signature):
     return hmac.compare_digest(expected, signature)
 
 
-def analyze_mail_images(images):
+def analyze_mail(images, body_text):
     """
-    Sends all scans to OpenAI in ONE call and gets back a list of structured
-    mail pieces (Python dicts matching THE SCHEMA above).
-
-    'images' is a list of (filename, raw_bytes) tuples.
-    Returns: a list of dicts, or [] if something went wrong.
+    ONE OpenAI call with both the envelope images AND the email body text.
+    Returns a list of dicts — a mix of type="mail" and type="package".
     """
     if not OPENAI_API_KEY:
         print("⚠️  No OPENAI_API_KEY set — skipping the AI analysis.")
         return []
 
-    # WHY instructions-before-images: the model reads content in order, so
-    # priming it with the task + exact schema first improves accuracy.
     instructions = (
-        "These are today's USPS Informed Delivery mail scans — grayscale "
-        "images of envelope exteriors and any package notices. "
-        "Analyze EACH image as a separate piece of mail. "
-        "Return ONLY a JSON object with a single key \"pieces\", whose value "
-        "is an array. Each array element must have EXACTLY these keys:\n"
-        '  "recipient": string (who it is addressed to, or "unknown"),\n'
-        '  "sender": string (who it is from, best guess, or "unknown"),\n'
+        "You are analyzing a USPS Informed Delivery daily digest.\n\n"
+        "TWO sources of information:\n"
+        "1) The attached grayscale IMAGES are scans of envelope exteriors "
+        "(letters/mail pieces).\n"
+        "2) The TEXT below lists EXPECTED PACKAGES (with 'FROM:' senders, "
+        "expected-delivery timing, and tracking numbers).\n\n"
+        "Return ONLY a JSON object with a single key \"items\", an array.\n\n"
+        "For each MAIL piece seen in the images, add an object with EXACTLY:\n"
+        '  "type": "mail",\n'
+        '  "recipient": string (addressee, or "unknown"),\n'
+        '  "sender": string (short readable name, e.g. "IRS", not the full '
+        'address block; or "unknown"),\n'
         '  "category": one of "financial","government","medical","personal",'
-        '"advertising","package","other",\n'
+        '"advertising","other",\n'
         '  "is_advertisement": boolean,\n'
-        '  "is_package": boolean,\n'
-        '  "importance": integer 1, 2, or 3 '
-        "(3 = important like bills/government/tax/medical/legal/checks; "
-        "2 = normal personal mail; 1 = junk or advertising),\n"
-        '  "action_needed": boolean (likely requires you to do something),\n'
-        '  "summary": string (one short line describing the piece),\n'
-        '  "confidence": one of "high","medium","low" '
-        "(these scans are blurry — be honest about uncertainty).\n"
-        "Do not add any keys. Do not include any text outside the JSON."
+        '  "importance": 1, 2, or 3 (3=bills/government/tax/medical/legal/'
+        "checks; 2=normal personal mail; 1=junk/ads),\n"
+        '  "action_needed": boolean,\n'
+        '  "summary": string (one short line),\n'
+        '  "confidence": "high","medium", or "low" (scans are blurry — be '
+        "honest).\n\n"
+        "For each PACKAGE found in the text, add an object with EXACTLY:\n"
+        '  "type": "package",\n'
+        '  "sender": string (the FROM: company),\n'
+        '  "tracking_number": string (the long digit string, or "unknown"),\n'
+        '  "expected": string (e.g. "Today", "1-2 Days", or "unknown"),\n'
+        '  "summary": string (one short line).\n\n'
+        "Do not add keys beyond those listed for each type. "
+        "Do not include any text outside the JSON.\n\n"
+        "=== PACKAGE TEXT FROM EMAIL BODY ===\n"
+        + (body_text or "(no body text)")
     )
 
     content = [{"type": "text", "text": instructions}]
@@ -101,8 +98,6 @@ def analyze_mail_images(images):
     payload = {
         "model": OPENAI_MODEL,
         "messages": [{"role": "user", "content": content}],
-        # WHY response_format json_object: forces OpenAI to return valid JSON
-        # with no ```fences or chatty preamble — the #1 cause of parse errors.
         "response_format": {"type": "json_object"},
     }
 
@@ -118,28 +113,20 @@ def analyze_mail_images(images):
         )
         resp.raise_for_status()
         raw_text = resp.json()["choices"][0]["message"]["content"]
-        parsed = json.loads(raw_text)            # safe: json mode guarantees JSON
-        return parsed.get("pieces", [])
+        return json.loads(raw_text).get("items", [])
     except Exception as e:
         print(f"❌ OpenAI call/parse failed: {e}")
         return []
 
 
-def build_headline(pieces):
-    """
-    Builds the one-line summary FROM the JSON. Code does the counting (not the
-    AI) because counting must be exact. Returns a single string.
+def build_headline(items):
+    """Builds the one-line summary. Code counts (exact); AI doesn't."""
+    letters = [i for i in items if i.get("type") == "mail"]
+    packages = [i for i in items if i.get("type") == "package"]
 
-    Example: "You have 3 pieces of mail from Voya, PSECU, and Seneca, and
-              1 package from Amazon today."
-    """
-    letters = [p for p in pieces if not p.get("is_package")]
-    packages = [p for p in pieces if p.get("is_package")]
-
-    def name_list(items):
-        # Unique sender names, preserving order, skipping unknowns.
+    def name_list(group):
         names = []
-        for p in items:
+        for p in group:
             s = p.get("sender", "unknown")
             if s and s.lower() != "unknown" and s not in names:
                 names.append(s)
@@ -147,34 +134,43 @@ def build_headline(pieces):
             return ""
         if len(names) == 1:
             return names[0]
+        if len(names) == 2:
+            return names[0] + " and " + names[1]
+        # 3+ names: Oxford-comma style "A, B, and C"
         return ", ".join(names[:-1]) + ", and " + names[-1]
 
     parts = []
     if letters:
         senders = name_list(letters)
-        piece_word = "piece" if len(letters) == 1 else "pieces"
-        line = f"{len(letters)} {piece_word} of mail"
+        word = "piece" if len(letters) == 1 else "pieces"
+        line = f"{len(letters)} {word} of mail"
         if senders:
             line += f" from {senders}"
         parts.append(line)
     if packages:
         senders = name_list(packages)
-        pkg_word = "package" if len(packages) == 1 else "packages"
-        line = f"{len(packages)} {pkg_word}"
+        word = "package" if len(packages) == 1 else "packages"
+        line = f"{len(packages)} {word}"
         if senders:
             line += f" from {senders}"
         parts.append(line)
 
     if not parts:
-        return "No mail detected today."
-    return "You have " + ", and ".join(parts) + " today."
+        return "No mail or packages detected today."
+    # Join the mail-part and package-part. Use " and " (no comma) since each
+    # part may already contain commas in its own sender list — avoids the
+    # awkward "IRS, and PSECU, and 2 packages" double-"and" pileup.
+    if len(parts) == 1:
+        body = parts[0]
+    else:
+        body = parts[0] + " and " + parts[1]
+    return "You have " + body + " today."
 
 
 @app.route("/mail-arrived", methods=["POST"])
 def mail_arrived():
     data = request.form
 
-    # --- 1. Verify it's really Mailgun ---
     if not verify_mailgun_signature(
         data.get("token", ""), data.get("timestamp", ""), data.get("signature", "")
     ):
@@ -185,7 +181,7 @@ def mail_arrived():
     print(f"📬 NEW EMAIL — {data.get('subject', '(no subject)')}")
     print("=" * 60)
 
-    # --- 2. Pull the JPEG scans out of the attachments ---
+    # Pull envelope scans from attachments
     images = []
     for key in request.files:
         f = request.files[key]
@@ -194,25 +190,26 @@ def mail_arrived():
             images.append((f.filename, raw))
             print(f"  📎 Found image: {f.filename} ({len(raw)} bytes)")
 
-    if not images:
-        print("  (No images in this email — nothing to analyze.)")
+    # Pull the body text (where package info lives). Prefer stripped-text
+    # (Mailgun removes quoted/forwarded cruft); fall back to body-plain.
+    body_text = data.get("stripped-text") or data.get("body-plain") or ""
+    print(f"  📝 Body text: {len(body_text)} chars")
+
+    if not images and not body_text:
+        print("  (Nothing to analyze.)")
         return "OK", 200
 
-    # --- 3. Analyze into structured JSON ---
-    print(f"\n  🤖 Sending {len(images)} image(s) to {OPENAI_MODEL}...")
-    pieces = analyze_mail_images(images)
+    print(f"\n  🤖 Sending {len(images)} image(s) + body text to {OPENAI_MODEL}...")
+    items = analyze_mail(images, body_text)
 
-    # --- 4. Build the headline from the JSON (code counts, not the AI) ---
-    headline = build_headline(pieces)
+    headline = build_headline(items)
 
-    # --- 5. Print both ---
     print("\n--- 📋 ONE-LINE SUMMARY ---")
     print(headline)
-    print("\n--- 🗂️  PER-PIECE JSON ---")
-    print(json.dumps(pieces, indent=2))
+    print("\n--- 🗂️  ITEMS JSON ---")
+    print(json.dumps(items, indent=2))
     print("=" * 60 + "\n")
 
-    # --- 6. Return 200 fast ---
     return "OK", 200
 
 
