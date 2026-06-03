@@ -292,19 +292,26 @@ def today():
     })
     html = html.replace("__MAIL_DATA__", payload)
     resp = Response(html, mimetype="text/html")
-    # WHY no-cache: forces the browser to fetch the latest page every time,
-    # so design/code changes show up immediately instead of a stale cached copy.
-    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    # Layered anti-cache: no single header is enough on iOS Safari. We combine
+    # Cache-Control (modern), Pragma (HTTP/1.0 fallback), and Expires (legacy)
+    # so every layer is told the same thing — never reuse this response.
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0, private"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
     return resp
 
 
 @app.route("/today.json")
 def today_json():
-    """Raw JSON, in case you want to build other things on top of it later."""
-    return Response(
+    """Raw JSON, used by the page's auto-refresh on visibility change."""
+    resp = Response(
         json.dumps({"summary": LATEST_MAIL["summary"], "items": LATEST_MAIL["items"]}),
         mimetype="application/json",
     )
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0, private"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    return resp
 
 
 @app.route("/", methods=["GET"])
