@@ -76,7 +76,7 @@ def analyze_mail(images, body_text):
         '  "sender": string (SHORT readable name like "IRS", not the full '
         'address block; or "unknown"),\n'
         '  "category": one of "financial","government","medical","personal",'
-        '"advertising","other",\n'
+        '"advertising", or other category you deem reasonable,\n'
         '  "is_advertisement": boolean,\n'
         '  "importance": 1, 2, or 3 (3=bills/government/tax/medical/legal/'
         "checks; 2=normal personal mail; 1=junk/ads),\n"
@@ -84,7 +84,7 @@ def analyze_mail(images, body_text):
         '  "summary": string (one short line),\n'
         '  "confidence": "high","medium", or "low" (scans are blurry — be '
         "honest).\n\n"
-        "For each PACKAGE in the text, an object with EXACTLY:\n"
+        "For each PACKAGE in the text, an object with EXACTLY, do not list package if there is no details provided:\n"
         '  "type": "package",\n'
         '  "sender": string (the FROM: company, "Unknown" if not listed),\n'
         '  "tracking_number": string (the long digit string or "unknown"),\n'
