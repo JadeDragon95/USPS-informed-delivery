@@ -65,7 +65,7 @@ def analyze_mail(images, body_text):
     instructions = (
         "You are analyzing a USPS Informed Delivery daily digest.\n\n"
         "TWO sources:\n"
-        "1) The attached grayscale IMAGES are scans of envelope exteriors "
+        "1) The attached grayscale IMAGES are scans of envelope exteriors, each picture contains only ONE mailpiece, no exception."
         "(letters/mail pieces).\n"
         "2) The TEXT below lists EXPECTED PACKAGES ('FROM:' senders, expected "
         "timing, tracking numbers).\n\n"
