@@ -39,8 +39,6 @@ PUBLIC_URL = os.environ.get("PUBLIC_URL", "https://web-production-0d2b6.up.railw
 OPENAI_MODEL = "gpt-5.4-mini"
 
 # --- The shared store: webhook writes, /today reads ---
-# WHY a plain dict in memory: you chose "today only," so there's nothing to
-# persist. New mail overwrites. Clears on redeploy (acceptable for a daily view).
 LATEST_MAIL = {"summary": "No mail processed yet today.", "items": [], "updated_at": None}
 
 
@@ -84,7 +82,7 @@ def analyze_mail(images, body_text):
         '  "summary": string (one short line),\n'
         '  "confidence": "high","medium", or "low" (scans are blurry — be '
         "honest).\n\n"
-        "For each PACKAGE in the text, an object with EXACTLY, do not list package if there is no details provided:\n"
+        "For each PACKAGE in the text, an object with EXACTLY (always include every package, even if sender or tracking are missing — use 'Unknown' for missing fields):\n"
         '  "type": "package",\n'
         '  "sender": string (the FROM: company, "Unknown" if not listed),\n'
         '  "tracking_number": string (the long digit string or "unknown"),\n'
@@ -127,8 +125,27 @@ def analyze_mail(images, body_text):
         return []
 
 
-def build_headline(items):
-    """Build the one-line summary FROM the JSON. Code counts (exact)."""
+def parse_digest_counts(body_text):
+    """
+    Extract the authoritative mail/package counts USPS prints at the top of
+    every Daily Digest: "You have 3 mailpiece(s) and 1 inbound package(s)…"
+    Returns (mail_count, package_count) as ints, or (None, None) if not found.
+    """
+    m = re.search(
+        r"You have\s+(\d+)\s+mailpiece[s]?\s*\(s\)\s+and\s+(\d+)\s+inbound package[s]?\s*\(s\)",
+        body_text, re.IGNORECASE,
+    )
+    if m:
+        return int(m.group(1)), int(m.group(2))
+    # Fallback: just mail pieces, no packages mentioned
+    m2 = re.search(r"You have\s+(\d+)\s+mailpiece[s]?\s*\(s\)", body_text, re.IGNORECASE)
+    if m2:
+        return int(m2.group(1)), 0
+    return None, None
+
+
+def build_headline(items, mail_count=None, package_count=None):
+    """Build the one-line summary. Uses authoritative email counts when available."""
     letters = [i for i in items if i.get("type") != "package"]
     packages = [i for i in items if i.get("type") == "package"]
 
@@ -146,18 +163,23 @@ def build_headline(items):
             return names[0] + " and " + names[1]
         return ", ".join(names[:-1]) + ", and " + names[-1]
 
+    # Use authoritative counts from the email when available; fall back to
+    # counting AI items (which may miss pieces with incomplete data).
+    n_letters = mail_count if mail_count is not None else len(letters)
+    n_packages = package_count if package_count is not None else len(packages)
+
     parts = []
-    if letters:
+    if n_letters:
         senders = name_list(letters)
-        word = "piece" if len(letters) == 1 else "pieces"
-        line = f"{len(letters)} {word} of mail"
+        word = "piece" if n_letters == 1 else "pieces"
+        line = f"{n_letters} {word} of mail"
         if senders:
             line += f" from {senders}"
         parts.append(line)
-    if packages:
+    if n_packages:
         senders = name_list(packages)
-        word = "package" if len(packages) == 1 else "packages"
-        line = f"{len(packages)} {word}"
+        word = "package" if n_packages == 1 else "packages"
+        line = f"{n_packages} {word}"
         if senders:
             line += f" from {senders}"
         parts.append(line)
@@ -191,7 +213,6 @@ def send_push(headline, items):
             return names[0] + " and " + names[1]
         return ", ".join(names[:-1]) + ", and " + names[-1]
 
-    # Build the message with packages FIRST.
     lines = []
     if packages:
         senders = name_list(packages)
@@ -233,39 +254,23 @@ def parse_delivery_alert(subject, body_text):
     Pull sender, expected time, and tracking number out of a USPS delivery
     alert email using plain regex — NO AI call needed.
 
-    WHY no AI: these emails follow a strict USPS template, so regex is
-    instant, free, and more reliable than asking a model to extract fields.
     Returns a dict {sender, time, tracking, is_today} or None if it can't
-    parse confidently (in which case we skip the alert rather than guess).
-
-    Example subject:
-      "USPS® Expected Delivery on Saturday, May 16, 2026 arriving by 9:00pm 9234..."
-    Example body:
-      "...Your item is out for delivery on May 16, 2026 at 7:49 am in
-       SHINGLEHOUSE, PA 16748. USPS expects to deliver your package today
-       by 9:00pm. Tracking Number: 9234690376107700453486
-       Package Shipped from: BEAUTYLISH, INC."
+    parse confidently.
     """
     text = (subject or "") + "\n" + (body_text or "")
 
-    # Tracking number: long digit string (USPS = 20+ digits)
     tracking_match = re.search(r"\b(\d{20,})\b", text)
     tracking = tracking_match.group(1) if tracking_match else None
 
-    # Sender: "Package Shipped from: NAME" or "Shipped from: NAME"
     sender_match = re.search(r"(?:Package\s+)?Shipped from:\s*(.+?)(?:\n|$)",
                              text, re.IGNORECASE)
     sender = sender_match.group(1).strip().rstrip(".,") if sender_match else None
 
-    # Expected time: "by 9:00pm" / "by 9:00 PM"
     time_match = re.search(r"by\s+(\d{1,2}:\d{2}\s*(?:am|pm|AM|PM))", text)
     expected_time = time_match.group(1).lower().replace(" ", "") if time_match else None
 
-    # Is today vs future day: USPS body literally says "today" for same-day
-    # ("USPS expects to deliver your package today by ...").
     is_today = bool(re.search(r"\bdeliver\s+your\s+package\s+today\b", text, re.IGNORECASE))
 
-    # For non-today: pull the weekday out of the subject ("Expected Delivery on Saturday,...")
     day_match = re.search(
         r"Expected Delivery on\s+(Sunday|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday)",
         text, re.IGNORECASE,
@@ -273,40 +278,34 @@ def parse_delivery_alert(subject, body_text):
     weekday = day_match.group(1).capitalize() if day_match else None
 
     if not tracking or not sender:
-        # Can't confidently identify the package — bail rather than guess.
         return None
     return {
         "sender": sender,
         "tracking": tracking,
-        "expected_time": expected_time,    # e.g. "9:00pm" or None
+        "expected_time": expected_time,
         "is_today": is_today,
-        "weekday": weekday,                # e.g. "Saturday" or None
+        "weekday": weekday,
     }
 
 
 def send_delivery_alert_push(alert):
-    """Send a HIGH-priority push for an individual delivery alert.
-    Tapping it opens the USPS tracking page for THAT package."""
+    """Send a HIGH-priority push for an individual delivery alert."""
     if not NTFY_TOPIC:
         return
 
-    # Title: "Your package from X is/will be out for delivery today/on Saturday"
     if alert["is_today"]:
         title = f"Your package from {alert['sender']} is out for delivery today"
     elif alert["weekday"]:
         title = f"Your package from {alert['sender']} will be out for delivery on {alert['weekday']}"
     else:
-        # Fallback if we couldn't parse the day — still useful, just less specific
         title = f"Your package from {alert['sender']} is out for delivery"
 
-    # Body: arrival window + tracking number
     body_parts = []
     if alert["expected_time"]:
         body_parts.append(f"Arriving by {alert['expected_time']}")
     body_parts.append(f"Tracking: {alert['tracking']}")
     body = " · ".join(body_parts)
 
-    # USPS tracking deep link — tapping the notification jumps right to status.
     usps_url = (
         "https://tools.usps.com/go/TrackConfirmAction?tLabels="
         + alert["tracking"]
@@ -320,7 +319,7 @@ def send_delivery_alert_push(alert):
                 "Title": title,
                 "Tags": "package",
                 "Click": usps_url,
-                "Priority": "high",     # bypasses Do Not Disturb on most setups
+                "Priority": "high",
             },
             timeout=10,
         )
@@ -344,12 +343,6 @@ def mail_arrived():
     print(f"📬 NEW EMAIL — {subject or '(no subject)'}")
     print("=" * 60)
 
-    # --- Route by email type (cheap subject check, no AI) ---
-    # USPS sends two distinct kinds of email:
-    #   1) "Daily Digest" — the morning summary (process for /today, full pipeline)
-    #   2) "Expected Delivery" / "Out for Delivery" — per-package alerts (push only)
-    # WHY split here: delivery alerts are real-time moments, not summary data,
-    # so they shouldn't overwrite /today or cost an OpenAI call.
     body_text = data.get("stripped-text") or data.get("body-plain") or ""
     subj_lower = subject.lower()
     is_delivery_alert = (
@@ -368,12 +361,19 @@ def mail_arrived():
         print("=" * 60 + "\n")
         return "OK", 200
 
-    # --- Otherwise: full Daily Digest pipeline ---
+    # --- Full Daily Digest pipeline ---
+    # Only keep images large enough to be mailpiece scans. USPS envelope
+    # scans are always at least 10 KB; logos, spacers, and decorative images
+    # are typically well under 5 KB.
+    MIN_MAILPIECE_BYTES = 5_000
     images = []
     for key in request.files:
         f = request.files[key]
         raw = f.read()
         if f.content_type and f.content_type.startswith("image/"):
+            if len(raw) < MIN_MAILPIECE_BYTES:
+                print(f"  ⏭️  Skipped small image (likely logo/spacer): {f.filename} ({len(raw)} bytes)")
+                continue
             images.append((f.filename, raw))
             print(f"  📎 Found image: {f.filename} ({len(raw)} bytes)")
 
@@ -383,11 +383,15 @@ def mail_arrived():
     if not images and not body_text:
         print("  (Nothing to analyze.)")
         return "OK", 200
+
+    mail_count, package_count = parse_digest_counts(body_text)
+    if mail_count is not None:
+        print(f"  📊 Email says: {mail_count} mailpiece(s), {package_count} package(s)")
+
     print(f"\n  🤖 Sending {len(images)} image(s) + body text to {OPENAI_MODEL}...")
     items = analyze_mail(images, body_text)
-    headline = build_headline(items)
+    headline = build_headline(items, mail_count=mail_count, package_count=package_count)
 
-    # --- Store the single result object (the page reads this) ---
     LATEST_MAIL["summary"] = headline
     LATEST_MAIL["items"] = items
     LATEST_MAIL["updated_at"] = datetime.utcnow().isoformat()
@@ -397,7 +401,6 @@ def mail_arrived():
     print("--- 🗂️  ITEMS ---")
     print(json.dumps(items, indent=2))
 
-    # --- Notify your phone ---
     send_push(headline, items)
     print("=" * 60 + "\n")
 
@@ -407,9 +410,6 @@ def mail_arrived():
 @app.route("/today")
 def today():
     """Render the briefing page with today's stored JSON injected live."""
-    # Load the HTML template and swap the placeholder for real data.
-    # WHY inject server-side: the page gets the data at load time, so there's
-    # no separate API call — open the URL and it's just there.
     template_path = os.path.join(os.path.dirname(__file__), "templates", "today.html")
     with open(template_path, "r", encoding="utf-8") as fh:
         html = fh.read()
@@ -419,9 +419,6 @@ def today():
     })
     html = html.replace("__MAIL_DATA__", payload)
     resp = Response(html, mimetype="text/html")
-    # Layered anti-cache: no single header is enough on iOS Safari. We combine
-    # Cache-Control (modern), Pragma (HTTP/1.0 fallback), and Expires (legacy)
-    # so every layer is told the same thing — never reuse this response.
     resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0, private"
     resp.headers["Pragma"] = "no-cache"
     resp.headers["Expires"] = "0"
