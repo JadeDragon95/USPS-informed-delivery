@@ -196,24 +196,23 @@ def send_push(headline, items):
 
     if packages:
         word = "package" if len(packages) == 1 else "packages"
-        pkg_parts = []
+        lines.append(f"📦 {len(packages)} {word}:")
         for p in packages:
             sender = p.get("sender", "Unknown")
             expected = p.get("expected", "unknown")
-            detail = sender
+            detail = f"📦 {sender}"
             if expected and expected.lower() != "unknown":
                 detail += f" (arriving {expected.lower()})"
-            pkg_parts.append(detail)
-        lines.append(f"📦 {len(packages)} {word}: " + ", ".join(pkg_parts))
+            lines.append(detail)
 
     if mail:
         word = "mail" if len(mail) == 1 else "mails"
-        mail_parts = []
+        lines.append(f"✉️ {len(mail)} {word}:")
         for m in mail:
             sender = m.get("sender", "Unknown")
             recipient = m.get("recipient", "")
             summary = m.get("summary", "")
-            detail = sender
+            detail = f"✉️ {sender}"
             extras = []
             if recipient and recipient.lower() not in ("unknown", ""):
                 extras.append(f"for {recipient}")
@@ -221,14 +220,7 @@ def send_push(headline, items):
                 extras.append(summary)
             if extras:
                 detail += f" ({', '.join(extras)})"
-            mail_parts.append(detail)
-        if len(mail_parts) == 1:
-            mail_str = mail_parts[0]
-        elif len(mail_parts) == 2:
-            mail_str = mail_parts[0] + ", and " + mail_parts[1]
-        else:
-            mail_str = ", ".join(mail_parts[:-1]) + ", and " + mail_parts[-1]
-        lines.append(f"✉️ {len(mail)} {word}: {mail_str}")
+            lines.append(detail)
 
     body = "\n".join(lines) if lines else "No mail or packages today."
 
