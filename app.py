@@ -76,7 +76,7 @@ def analyze_mail(images, body_text):
         '  "importance": 1, 2, or 3 (3=bills/government/tax/medical/legal/'
         "checks; 2=normal personal mail; 1=junk/ads),\n"
         '  "action_needed": boolean,\n'
-        '  "summary": string (one short line),\n'
+        '  "summary": string (one short line describing the mail piece; do NOT include the recipient name as it is shown separately),\n'
         '  "confidence": "high","medium", or "low" (scans are blurry — be '
         "honest).\n\n"
         "For each PACKAGE in the text, an object with EXACTLY (always include every package, even if sender or tracking are missing — use 'Unknown' for missing fields):\n"
