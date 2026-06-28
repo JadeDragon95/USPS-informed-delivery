@@ -192,61 +192,51 @@ def build_headline(items, mail_count=None, package_count=None):
 
 def send_push(headline, items):
     """Fire an Ntfy notification. Tapping it opens the /today page.
-    Body leads with PACKAGES (most actionable), then the mail count."""
+    Body leads with PACKAGES (most actionable), then per-piece mail details."""
     if not NTFY_TOPIC:
         return
     packages = [i for i in items if i.get("type") == "package"]
     mail = [i for i in items if i.get("type") != "package"]
-    action_count = len([i for i in mail if i.get("action_needed")])
-
-    def name_list(group):
-        names = []
-        for p in group:
-            s = p.get("sender", "")
-            if s and s.lower() != "unknown" and s not in names:
-                names.append(s)
-        if not names:
-            return ""
-        if len(names) == 1:
-            return names[0]
-        if len(names) == 2:
-            return names[0] + " and " + names[1]
-        return ", ".join(names[:-1]) + ", and " + names[-1]
 
     lines = []
-    if packages:
-        senders = name_list(packages)
-        word = "package" if len(packages) == 1 else "packages"
-        line = f"📦 {len(packages)} {word}"
-        if senders:
-            line += f" from {senders}"
-        lines.append(line)
-    if mail:
-        senders = name_list(mail)
-        word = "piece" if len(mail) == 1 else "pieces"
-        line = f"✉️ {len(mail)} {word} of mail"
-        if senders:
-            line += f" from {senders}"
-        if action_count:
-            line += f" ({action_count} need action)"
-        lines.append(line)
-    body = "\n".join(lines) if lines else "No mail or packages today."
 
-    try:
-        requests.post(
-            f"https://ntfy.sh/{NTFY_TOPIC}",
-            data=body.encode("utf-8"),
-            headers={
-                "Title": "Today's Mail",
-                "Tags": "mailbox_with_mail",
-                "Click": f"{PUBLIC_URL}/today",
-                "Priority": "default",
-            },
-            timeout=10,
-        )
-        print(f"  🔔 Push sent to ntfy.sh/{NTFY_TOPIC}")
-    except Exception as e:
-        print(f"  ⚠️  Push failed (not fatal): {e}")
+    if packages:
+        word = "package" if len(packages) == 1 else "packages"
+        pkg_parts = []
+        for p in packages:
+            sender = p.get("sender", "Unknown")
+            expected = p.get("expected", "unknown")
+            detail = sender
+            if expected and expected.lower() != "unknown":
+                detail += f" (arriving {expected.lower()})"
+            pkg_parts.append(detail)
+        lines.append(f"📦 {len(packages)} {word}: " + ", ".join(pkg_parts))
+
+    if mail:
+        word = "mail" if len(mail) == 1 else "mails"
+        mail_parts = []
+        for m in mail:
+            sender = m.get("sender", "Unknown")
+            recipient = m.get("recipient", "")
+            summary = m.get("summary", "")
+            detail = sender
+            extras = []
+            if recipient and recipient.lower() not in ("unknown", ""):
+                extras.append(f"for {recipient}")
+            if summary:
+                extras.append(summary)
+            if extras:
+                detail += f" ({', '.join(extras)})"
+            mail_parts.append(detail)
+        if len(mail_parts) == 1:
+            mail_str = mail_parts[0]
+        elif len(mail_parts) == 2:
+            mail_str = mail_parts[0] + ", and " + mail_parts[1]
+        else:
+            mail_str = ", ".join(mail_parts[:-1]) + ", and " + mail_parts[-1]
+        lines.append(f"✉️ {len(mail)} {word}: {mail_str}")
+
+    body = "\n".join(lines) if lines else "No mail or packages today."
 
 
 def parse_delivery_alert(subject, body_text):
