@@ -31,14 +31,11 @@ app = Flask(__name__)
 # --- Secrets / config (set these in Railway -> Variables) ---
 MAILGUN_SIGNING_KEY = os.environ.get("MAILGUN_SIGNING_KEY", "")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
-# Your ntfy topic. Default matches what you subscribed to on your phone.
 NTFY_TOPIC = os.environ.get("NTFY_TOPIC", "usps_informed_delivery")
-# Your public page URL — tapping the notification opens this.
 PUBLIC_URL = os.environ.get("PUBLIC_URL", "https://web-production-0d2b6.up.railway.app")
 
 OPENAI_MODEL = "gpt-5.4-mini"
 
-# --- The shared store: webhook writes, /today reads ---
 LATEST_MAIL = {"summary": "No mail processed yet today.", "items": [], "updated_at": None}
 
 
@@ -127,8 +124,8 @@ def analyze_mail(images, body_text):
 
 def parse_digest_counts(body_text):
     """
-    Extract the authoritative mail/package counts USPS prints at the top of
-    every Daily Digest: "You have 3 mailpiece(s) and 1 inbound package(s)…"
+    Extract the authoritative mail/package counts from the USPS digest summary line:
+    "You have 3 mailpiece(s) and 1 inbound package(s) arriving soon."
     Returns (mail_count, package_count) as ints, or (None, None) if not found.
     """
     m = re.search(
@@ -137,7 +134,6 @@ def parse_digest_counts(body_text):
     )
     if m:
         return int(m.group(1)), int(m.group(2))
-    # Fallback: just mail pieces, no packages mentioned
     m2 = re.search(r"You have\s+(\d+)\s+mailpiece[s]?\s*\(s\)", body_text, re.IGNORECASE)
     if m2:
         return int(m2.group(1)), 0
@@ -163,8 +159,6 @@ def build_headline(items, mail_count=None, package_count=None):
             return names[0] + " and " + names[1]
         return ", ".join(names[:-1]) + ", and " + names[-1]
 
-    # Use authoritative counts from the email when available; fall back to
-    # counting AI items (which may miss pieces with incomplete data).
     n_letters = mail_count if mail_count is not None else len(letters)
     n_packages = package_count if package_count is not None else len(packages)
 
@@ -238,14 +232,28 @@ def send_push(headline, items):
 
     body = "\n".join(lines) if lines else "No mail or packages today."
 
+    try:
+        requests.post(
+            f"https://ntfy.sh/{NTFY_TOPIC}",
+            data=body.encode("utf-8"),
+            headers={
+                "Title": "Today's Mail",
+                "Tags": "mailbox_with_mail",
+                "Click": f"{PUBLIC_URL}/today",
+                "Priority": "default",
+            },
+            timeout=10,
+        )
+        print(f"  🔔 Push sent to ntfy.sh/{NTFY_TOPIC}")
+    except Exception as e:
+        print(f"  ⚠️  Push failed (not fatal): {e}")
+
 
 def parse_delivery_alert(subject, body_text):
     """
     Pull sender, expected time, and tracking number out of a USPS delivery
     alert email using plain regex — NO AI call needed.
-
-    Returns a dict {sender, time, tracking, is_today} or None if it can't
-    parse confidently.
+    Returns a dict {sender, time, tracking, is_today} or None if unparseable.
     """
     text = (subject or "") + "\n" + (body_text or "")
 
@@ -352,9 +360,7 @@ def mail_arrived():
         return "OK", 200
 
     # --- Full Daily Digest pipeline ---
-    # Only keep images large enough to be mailpiece scans. USPS envelope
-    # scans are always at least 10 KB; logos, spacers, and decorative images
-    # are typically well under 5 KB.
+    # Skip images under 5 KB — those are logos/spacers, not mailpiece scans.
     MIN_MAILPIECE_BYTES = 5_000
     images = []
     for key in request.files:
