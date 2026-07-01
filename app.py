@@ -56,7 +56,6 @@ def analyze_mail(images, body_text):
     if not OPENAI_API_KEY:
         print("⚠️  No OPENAI_API_KEY set — skipping the AI analysis.")
         return []
-
     instructions = (
         "You are analyzing a USPS Informed Delivery daily digest.\n\n"
         "TWO sources:\n"
@@ -89,7 +88,6 @@ def analyze_mail(images, body_text):
         "=== PACKAGE TEXT FROM EMAIL BODY ===\n"
         + (body_text or "(no body text)")
     )
-
     content = [{"type": "text", "text": instructions}]
     for filename, raw_bytes in images:
         b64 = base64.b64encode(raw_bytes).decode("utf-8")
@@ -97,12 +95,25 @@ def analyze_mail(images, body_text):
             "type": "image_url",
             "image_url": {"url": f"data:image/jpeg;base64,{b64}"},
         })
-
     payload = {
         "model": OPENAI_MODEL,
         "messages": [{"role": "user", "content": content}],
         "response_format": {"type": "json_object"},
     }
+
+    # --- 🔍 DEBUG: show exactly what we're sending to OpenAI ---
+    # Purpose: if packages aren't detected, this reveals which side is failing.
+    # If the body-text section below is missing package lines, the problem is
+    # upstream (Gmail/Mailgun stripped them). If they're present but OpenAI
+    # still misses them, the problem is prompt/model.
+    print("--- 🔍 PROMPT SENT TO OPENAI ---")
+    print(instructions[:2500])
+    if len(instructions) > 2500:
+        print(f"... [+{len(instructions) - 2500} more chars]")
+    print(f"--- 🔍 {len(images)} IMAGE(S) ATTACHED ---")
+    for fn, raw in images:
+        print(f"     • {fn}: {len(raw)} bytes")
+    print("--- 🔍 END PROMPT ---")
 
     try:
         resp = requests.post(
@@ -116,6 +127,14 @@ def analyze_mail(images, body_text):
         )
         resp.raise_for_status()
         raw_text = resp.json()["choices"][0]["message"]["content"]
+        # --- 🔍 DEBUG: show OpenAI's raw response before we parse it ---
+        # If parsing fails or items are missing, this tells us whether it's
+        # the model's output or our JSON handling that dropped them.
+        print("--- 🔍 OPENAI RAW RESPONSE ---")
+        print(raw_text[:2500])
+        if len(raw_text) > 2500:
+            print(f"... [+{len(raw_text) - 2500} more chars]")
+        print("--- 🔍 END RESPONSE ---")
         return json.loads(raw_text).get("items", [])
     except Exception as e:
         print(f"❌ OpenAI call/parse failed: {e}")
