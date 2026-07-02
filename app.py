@@ -51,6 +51,35 @@ def verify_mailgun_signature(token, timestamp, signature):
     return hmac.compare_digest(expected, signature)
 
 
+def choose_body(data):
+    """
+    Pick the fuller of Mailgun's two body-text fields.
+
+    Purpose: Mailgun exposes two flavors of the email body:
+      - 'stripped-text' — cleaner, with quoted replies and forwarded-message
+        cruft removed. Great for MANUALLY forwarded email (lots of cruft).
+      - 'body-plain'    — the raw plain-text version, complete but noisier.
+
+    We used to always prefer 'stripped-text'. But AUTO-forwarded USPS emails
+    already come through leaner, and 'stripped-text' sometimes over-strips
+    legitimate content (like the package list). 'body-plain' on the same
+    email keeps everything.
+
+    Length is a good proxy for completeness here — you can't extract what
+    isn't in the text — so we take whichever field is longer.
+    """
+    stripped = (data.get("stripped-text") or "").strip()
+    raw      = (data.get("body-plain")    or "").strip()
+    if not stripped:
+        return raw
+    if not raw:
+        return stripped
+    chosen_raw = len(raw) > len(stripped)
+    print(f"  📝 body-plain: {len(raw)} chars, stripped-text: {len(stripped)} chars"
+          f" → using {'body-plain (fuller)' if chosen_raw else 'stripped-text'}")
+    return raw if chosen_raw else stripped
+
+
 def analyze_mail(images, body_text):
     """One OpenAI call with images + body text. Returns list of item dicts."""
     if not OPENAI_API_KEY:
@@ -131,10 +160,12 @@ def analyze_mail(images, body_text):
         # If parsing fails or items are missing, this tells us whether it's
         # the model's output or our JSON handling that dropped them.
         print("--- 🔍 OPENAI RAW RESPONSE ---")
-        print(raw_text[:2500])
-        if len(raw_text) > 2500:
+        print(raw_text[:2500] if raw_text else "(empty)")
+        if raw_text and len(raw_text) > 2500:
             print(f"... [+{len(raw_text) - 2500} more chars]")
         print("--- 🔍 END RESPONSE ---")
+        if not raw_text:
+            return []
         return json.loads(raw_text).get("items", [])
     except Exception as e:
         print(f"❌ OpenAI call/parse failed: {e}")
@@ -352,7 +383,10 @@ def mail_arrived():
     print(f"📬 NEW EMAIL — {subject or '(no subject)'}")
     print("=" * 60)
 
-    body_text = data.get("stripped-text") or data.get("body-plain") or ""
+    # Purpose of picking the body once at the top: subject routing and the
+    # full pipeline both need it; computing it in one place avoids the two
+    # branches disagreeing about which text to trust.
+    body_text = choose_body(data)
     subj_lower = subject.lower()
     is_delivery_alert = (
         "expected delivery" in subj_lower
@@ -372,6 +406,8 @@ def mail_arrived():
 
     # --- Full Daily Digest pipeline ---
     # Skip images under 5 KB — those are logos/spacers, not mailpiece scans.
+    # Purpose: keeps OpenAI from wasting a vision call on the USPS logo or
+    # spacer pixels; real envelope scans are always well above 5 KB.
     MIN_MAILPIECE_BYTES = 5_000
     images = []
     for key in request.files:
@@ -384,7 +420,6 @@ def mail_arrived():
             images.append((f.filename, raw))
             print(f"  📎 Found image: {f.filename} ({len(raw)} bytes)")
 
-    body_text = data.get("stripped-text") or data.get("body-plain") or ""
     print(f"  📝 Body text: {len(body_text)} chars")
 
     if not images and not body_text:
