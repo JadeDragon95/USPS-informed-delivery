@@ -538,20 +538,22 @@ def build_headline(items, mail_count=None, package_count=None):
     return "You have " + body + " today."
 
 
-def ntfy_post(text):
+def ntfy_post(text, click=None):
     """Dead-simple ntfy push: one POST of plain UTF-8 text to the topic URL.
-    No headers at all — the message body carries everything, links included
-    (ntfy renders URLs in the body as tappable). The HTTP status is logged so
-    a failure shows up clearly in the Railway logs."""
+    `click` (optional) sets ntfy's Click header, so TAPPING the notification
+    opens that URL — the link never has to appear in the message body.
+    The HTTP status is logged so a failure shows up clearly in the Railway logs."""
+    headers = {"Click": click} if click else None
     try:
-        r = requests.post(NTFY_URL, data=text.encode("utf-8"), timeout=15)
+        r = requests.post(NTFY_URL, data=text.encode("utf-8"), headers=headers, timeout=15)
         print(f"  🔔 ntfy push -> HTTP {r.status_code}")
     except Exception as e:
         print(f"  ⚠️  ntfy push failed (not fatal): {e}")
 
 
 def send_push(headline, items):
-    """Push the digest: detail lines (packages first, then mail) + the /today link."""
+    """Push the digest: detail lines (packages first, then mail). Tapping the
+    notification opens /today — the link is in the Click header, not the body."""
     packages = [i for i in items if i.get("type") == "package"]
     mail = [i for i in items if i.get("type") != "package"]
 
@@ -586,8 +588,7 @@ def send_push(headline, items):
             lines.append(detail)
 
     body = "\n".join(lines) if lines else "No mail or packages today."
-    body += f"\n\n{PUBLIC_URL}/today"
-    ntfy_post(body)
+    ntfy_post(body, click=f"{PUBLIC_URL}/today")
 
 
 def parse_delivery_alert(subject, body_text):
@@ -628,7 +629,8 @@ def parse_delivery_alert(subject, body_text):
 
 
 def send_delivery_alert_push(alert):
-    """Push an individual delivery alert: title line, details, tracking link."""
+    """Push an individual delivery alert: title line + details. Tapping the
+    notification opens the USPS tracking page (Click header, not the body)."""
     if alert["is_today"]:
         title = f"Your package from {alert['sender']} is out for delivery today"
     elif alert["weekday"]:
@@ -647,7 +649,7 @@ def send_delivery_alert_push(alert):
         + alert["tracking"]
     )
 
-    ntfy_post(f"{title}\n{body}\n{usps_url}")
+    ntfy_post(f"{title}\n{body}", click=usps_url)
 
 
 @app.route("/mail-arrived", methods=["POST"])
