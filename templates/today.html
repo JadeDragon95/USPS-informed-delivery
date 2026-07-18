@@ -51,9 +51,18 @@
   .summary{
     font-family:"IBM Plex Sans",sans-serif;font-weight:500;
     font-size:clamp(1.1rem,3vw,1.4rem);
-    line-height:1.4;margin:22px 0 26px;
+    line-height:1.4;margin:22px 0 8px;
     padding-left:16px;border-left:4px solid var(--stamp);
   }
+  /* Which digest day is being shown + when it was processed.
+     .stale = the data is from a previous day (nothing received yet today),
+     shown in stamp red so it can't be mistaken for today's briefing. */
+  .digest-meta{
+    font-family:"IBM Plex Mono",monospace;font-size:.68rem;
+    letter-spacing:.14em;text-transform:uppercase;color:var(--ink-soft);
+    margin:0 0 26px;padding-left:16px;
+  }
+  .digest-meta.stale{color:var(--stamp)}
   .stats{
     display:grid;grid-template-columns:repeat(3,1fr);
     gap:1px;background:var(--line);
@@ -164,13 +173,14 @@
 <div class="wrap">
   <header class="masthead">
     <div class="dateline">
-      <span id="dateline-left">Daily Mail Briefing · v2</span>
+      <span id="dateline-left">Daily Mail Briefing · v3</span>
       <span id="dateline-right"></span>
     </div>
     <h1 class="title">Today's&nbsp;Mail</h1>
   </header>
 
   <p class="summary" id="summary"></p>
+  <p class="digest-meta" id="digest-meta"></p>
 
   <div class="stats stats-2">
     <div class="stat"><b id="s-mail">0</b><span>Mail</span></div>
@@ -211,6 +221,12 @@ function escapeHtml(s){
   return String(s).replace(/[&<>"']/g,c=>(
     {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]
   ));
+}
+
+/* Today's date as local YYYY-MM-DD ("en-CA" formats it that way) so we can
+   compare against the digest's own date stamp. */
+function todayIso(){
+  return new Date().toLocaleDateString("en-CA");
 }
 
 function packageCard(it, i){
@@ -288,10 +304,36 @@ function mailCard(it, i, noAnim){
   return card;
 }
 
+/* Show WHICH day the displayed digest belongs to. If the stored digest is
+   from a previous day, say so in red — previously yesterday's data looked
+   identical to today's, which read as "the page is wrong". */
+function renderDigestMeta(){
+  const el = document.getElementById("digest-meta");
+  el.classList.remove("stale");
+  if(!MAIL_DATA.date){
+    el.textContent = "";
+    return;
+  }
+  const d = new Date(MAIL_DATA.date + "T12:00:00"); // noon: avoids TZ edge cases
+  const label = d.toLocaleDateString(undefined,{weekday:"long",month:"long",day:"numeric"});
+  let updated = "";
+  if(MAIL_DATA.updated_at){
+    const u = new Date(MAIL_DATA.updated_at);
+    if(!isNaN(u)) updated = " · updated " + u.toLocaleTimeString([], {hour:"numeric",minute:"2-digit"});
+  }
+  if(MAIL_DATA.date === todayIso()){
+    el.textContent = "Digest for today" + updated;
+  } else {
+    el.textContent = "Nothing received yet today — showing digest from " + label + updated;
+    el.classList.add("stale");
+  }
+}
+
 function render(){
   document.getElementById("summary").textContent = MAIL_DATA.summary || "";
   document.getElementById("dateline-right").textContent =
     new Date().toLocaleDateString(undefined,{weekday:"long",year:"numeric",month:"long",day:"numeric"});
+  renderDigestMeta();
 
   const all = [...(MAIL_DATA.items||[])];
   const packages = all.filter(i=>i.type==="package");
@@ -372,8 +414,10 @@ async function refreshFromServer(){
     const r = await fetch("/today.json?t=" + Date.now(), {cache:"no-store"});
     if(!r.ok) return;
     const fresh = await r.json();
-    MAIL_DATA.summary = fresh.summary;
-    MAIL_DATA.items   = fresh.items;
+    MAIL_DATA.summary    = fresh.summary;
+    MAIL_DATA.items      = fresh.items;
+    MAIL_DATA.date       = fresh.date;
+    MAIL_DATA.updated_at = fresh.updated_at;
     render();
   }catch(e){ /* offline or transient — keep showing what we have */ }
 }
