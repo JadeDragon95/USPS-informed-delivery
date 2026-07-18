@@ -66,8 +66,7 @@ app = Flask(__name__)
 # --- Secrets / config (set these in Railway -> Variables) ---
 MAILGUN_SIGNING_KEY = os.environ.get("MAILGUN_SIGNING_KEY", "")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
-NTFY_TOPIC = os.environ.get("NTFY_TOPIC", "usps_informed_delivery")
-NTFY_BASE_URL = os.environ.get("NTFY_BASE_URL", "https://ntfy.sh").rstrip("/")
+NTFY_URL = os.environ.get("NTFY_URL", "https://ntfy.sh/usps_informed_delivery")
 PUBLIC_URL = os.environ.get("PUBLIC_URL", "https://web-production-0d2b6.up.railway.app")
 TIMEZONE = os.environ.get("TIMEZONE", "America/New_York")
 
@@ -539,11 +538,20 @@ def build_headline(items, mail_count=None, package_count=None):
     return "You have " + body + " today."
 
 
+def ntfy_post(text):
+    """Dead-simple ntfy push: one POST of plain UTF-8 text to the topic URL.
+    No headers at all — the message body carries everything, links included
+    (ntfy renders URLs in the body as tappable). The HTTP status is logged so
+    a failure shows up clearly in the Railway logs."""
+    try:
+        r = requests.post(NTFY_URL, data=text.encode("utf-8"), timeout=15)
+        print(f"  🔔 ntfy push -> HTTP {r.status_code}")
+    except Exception as e:
+        print(f"  ⚠️  ntfy push failed (not fatal): {e}")
+
+
 def send_push(headline, items):
-    """Fire an Ntfy notification. Tapping it opens the /today page.
-    Body leads with PACKAGES (most actionable), then per-piece mail details."""
-    if not NTFY_TOPIC:
-        return
+    """Push the digest: detail lines (packages first, then mail) + the /today link."""
     packages = [i for i in items if i.get("type") == "package"]
     mail = [i for i in items if i.get("type") != "package"]
 
@@ -578,25 +586,8 @@ def send_push(headline, items):
             lines.append(detail)
 
     body = "\n".join(lines) if lines else "No mail or packages today."
-
-    try:
-        r = requests.post(
-            f"{NTFY_BASE_URL}/{NTFY_TOPIC}",
-            data=body.encode("utf-8"),
-            headers={
-                "Title": "Today's Mail",
-                "Tags": "mailbox_with_mail",
-                "Click": f"{PUBLIC_URL}/today",
-                "Priority": "default",
-            },
-            timeout=15,
-        )
-        if r.status_code == 200:
-            print(f"  🔔 Push sent to {NTFY_BASE_URL}/{NTFY_TOPIC}")
-        else:
-            print(f"  ⚠️  Ntfy returned HTTP {r.status_code}: {r.text[:200]}")
-    except Exception as e:
-        print(f"  ⚠️  Push failed (not fatal): {e}")
+    body += f"\n\n{PUBLIC_URL}/today"
+    ntfy_post(body)
 
 
 def parse_delivery_alert(subject, body_text):
@@ -637,10 +628,7 @@ def parse_delivery_alert(subject, body_text):
 
 
 def send_delivery_alert_push(alert):
-    """Send a HIGH-priority push for an individual delivery alert."""
-    if not NTFY_TOPIC:
-        return
-
+    """Push an individual delivery alert: title line, details, tracking link."""
     if alert["is_today"]:
         title = f"Your package from {alert['sender']} is out for delivery today"
     elif alert["weekday"]:
@@ -659,24 +647,7 @@ def send_delivery_alert_push(alert):
         + alert["tracking"]
     )
 
-    try:
-        r = requests.post(
-            f"{NTFY_BASE_URL}/{NTFY_TOPIC}",
-            data=body.encode("utf-8"),
-            headers={
-                "Title": title,
-                "Tags": "package",
-                "Click": usps_url,
-                "Priority": "high",
-            },
-            timeout=15,
-        )
-        if r.status_code == 200:
-            print(f"  🔔 Delivery alert pushed: {alert['sender']} / {alert['tracking']}")
-        else:
-            print(f"  ⚠️  Ntfy returned HTTP {r.status_code}: {r.text[:200]}")
-    except Exception as e:
-        print(f"  ⚠️  Delivery alert push failed: {e}")
+    ntfy_post(f"{title}\n{body}\n{usps_url}")
 
 
 @app.route("/mail-arrived", methods=["POST"])
