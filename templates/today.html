@@ -2,160 +2,171 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Today's Mail · Briefing</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,900&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- PWA polish: blend the iOS status bar into the page when home-screen installed -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#f5f5f7">
+<title>Today's Mail</title>
 <style>
   :root{
-    --paper:#f4efe5;
-    --paper-2:#fbf8f1;
-    --ink:#23201b;
-    --ink-soft:#5d564b;
-    --line:#ddd4c4;
-    --stamp:#c0402c;
-    --urgent:#c0402c;
-    --important:#cf7430;
-    --notable:#b08611;
-    --low:#8a8275;
-    --teal:#2f6b63;
-    --hl:#f3d77e;
-    --shadow:0 1px 0 rgba(0,0,0,.04), 0 8px 24px -16px rgba(35,32,27,.35);
+    /* Apple palette: light-gray page, white surfaces, near-black ink */
+    --paper:#f5f5f7;
+    --paper-2:#ffffff;
+    --ink:#1d1d1f;
+    --ink-soft:#6e6e73;
+    --line:#d2d2d7;
+    --stamp:#ff3b30;
+    /* System colors for the 3 importance levels */
+    --urgent:#ff3b30;
+    --important:#ff9500;
+    --notable:#bf7900;
+    --low:#86868b;
+    --teal:#0071e3;           /* Apple blue — packages + links (JS references this) */
+    --hl:#cfe6ff;             /* soft blue marker for sender names */
+    --shadow:0 4px 20px rgba(0,0,0,.06);
   }
   *{box-sizing:border-box;margin:0;padding:0}
   body{
-    font-family:"IBM Plex Sans",sans-serif;
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","Helvetica Neue",Helvetica,Arial,sans-serif;
     background:var(--paper);
-    background-image:
-      radial-gradient(circle at 18% 12%, rgba(192,64,44,.05), transparent 40%),
-      radial-gradient(circle at 85% 0%, rgba(47,107,99,.05), transparent 38%);
     color:var(--ink);
-    line-height:1.5;
-    padding:clamp(20px,5vw,64px) clamp(16px,5vw,48px) 80px;
+    line-height:1.47;
+    padding:clamp(24px,5vw,64px) clamp(16px,5vw,48px) 80px;
     -webkit-font-smoothing:antialiased;
+    -moz-osx-font-smoothing:grayscale;
   }
-  .wrap{max-width:820px;margin:0 auto}
-  .masthead{border-bottom:3px double var(--ink);padding-bottom:18px;margin-bottom:28px}
+  .wrap{max-width:780px;margin:0 auto}
+
+  /* Masthead: big Apple headline, hairline underline instead of a heavy rule */
+  .masthead{border-bottom:1px solid var(--line);padding-bottom:22px;margin-bottom:30px}
   .dateline{
-    font-family:"IBM Plex Mono",monospace;
-    font-size:.72rem;letter-spacing:.18em;text-transform:uppercase;
+    font-size:.78rem;letter-spacing:0;text-transform:none;font-weight:500;
     color:var(--ink-soft);display:flex;justify-content:space-between;
     flex-wrap:wrap;gap:8px;
   }
   .title{
-    font-family:"Fraunces",serif;font-weight:900;
-    font-size:clamp(2.4rem,7vw,3.6rem);line-height:.95;
-    letter-spacing:-.02em;margin:10px 0 0;
+    font-weight:700;
+    font-size:clamp(2.6rem,8vw,3.8rem);line-height:1.05;
+    letter-spacing:-.028em;margin:12px 0 0;
   }
+
   .summary{
-    font-family:"IBM Plex Sans",sans-serif;font-weight:500;
-    font-size:clamp(1.1rem,3vw,1.4rem);
-    line-height:1.4;margin:22px 0 8px;
-    padding-left:16px;border-left:4px solid var(--stamp);
+    font-weight:500;
+    font-size:clamp(1.2rem,3vw,1.55rem);
+    line-height:1.35;letter-spacing:-.01em;margin:26px 0 10px;
+    color:var(--ink);
   }
-  /* Which digest day is being shown + when it was processed.
-     .stale = the data is from a previous day (nothing received yet today),
-     shown in stamp red so it can't be mistaken for today's briefing. */
+  /* Which digest day + when processed. .stale = older-than-today, shown red. */
   .digest-meta{
-    font-family:"IBM Plex Mono",monospace;font-size:.68rem;
-    letter-spacing:.14em;text-transform:uppercase;color:var(--ink-soft);
-    margin:0 0 26px;padding-left:16px;
+    font-size:.82rem;letter-spacing:0;text-transform:none;font-weight:500;
+    color:var(--ink-soft);margin:0 0 30px;
   }
   .digest-meta.stale{color:var(--stamp)}
+
+  /* Stats: two clean white cards with a hairline, Apple-style */
   .stats{
     display:grid;grid-template-columns:repeat(3,1fr);
-    gap:1px;background:var(--line);
-    border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:34px;
+    gap:12px;margin-bottom:38px;
   }
   .stats.stats-2{grid-template-columns:repeat(2,1fr)}
-  .stat{background:var(--paper-2);padding:14px 16px;text-align:center}
-  .stat b{font-family:"IBM Plex Sans",sans-serif;font-weight:600;font-size:1.9rem;display:block;line-height:1}
-  .stat span{font-family:"IBM Plex Mono",monospace;font-size:.62rem;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-soft)}
-  .stat.flag b{color:var(--stamp)}
-  .section-label{
-    font-family:"IBM Plex Mono",monospace;font-size:.68rem;
-    letter-spacing:.2em;text-transform:uppercase;color:var(--ink-soft);margin:0 0 12px;
+  .stat{
+    background:var(--paper-2);padding:22px 16px;text-align:center;
+    border:1px solid var(--line);border-radius:18px;
   }
+  .stat b{font-weight:600;font-size:2.4rem;display:block;line-height:1;letter-spacing:-.02em}
+  .stat span{font-size:.72rem;letter-spacing:0;text-transform:uppercase;color:var(--ink-soft);font-weight:500;display:block;margin-top:8px}
+  .stat.flag b{color:var(--stamp)}
+
+  .section-label{
+    font-size:.78rem;letter-spacing:0;text-transform:uppercase;
+    color:var(--ink-soft);margin:0 0 12px;font-weight:600;
+  }
+
+  /* Cards: white, generously rounded, whisper-soft shadow */
   .card{
     position:relative;background:var(--paper-2);
-    border:1px solid var(--line);border-left:5px solid var(--low);
-    border-radius:12px;padding:18px 20px;margin-bottom:14px;
+    border:1px solid var(--line);border-left:4px solid var(--low);
+    border-radius:18px;padding:20px 22px;margin-bottom:14px;
     box-shadow:var(--shadow);display:flex;gap:16px;align-items:flex-start;
-    transition:transform .15s ease, box-shadow .15s ease;
+    transition:transform .18s ease, box-shadow .18s ease;
     animation:rise .5s ease backwards;
   }
-  .card:hover{transform:translateY(-2px);box-shadow:0 14px 30px -18px rgba(35,32,27,.5)}
+  .card:hover{transform:translateY(-2px);box-shadow:0 10px 30px rgba(0,0,0,.10)}
   .icon{
-    font-size:1.6rem;line-height:1;flex:0 0 auto;
-    width:42px;height:42px;display:grid;place-items:center;
-    background:var(--paper);border:1px solid var(--line);border-radius:10px;
+    font-size:1.5rem;line-height:1;flex:0 0 auto;
+    width:44px;height:44px;display:grid;place-items:center;
+    background:var(--paper);border:1px solid var(--line);border-radius:12px;
   }
   .body{flex:1;min-width:0}
   .row1{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
   .parties{display:flex;flex-direction:column;gap:8px}
   .field-label{
-    font-family:"IBM Plex Mono",monospace;font-size:.58rem;font-weight:600;
-    letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft);
-    display:block;margin-bottom:2px;
+    font-size:.62rem;font-weight:600;
+    letter-spacing:.06em;text-transform:uppercase;color:var(--ink-soft);
+    display:block;margin-bottom:3px;
   }
   .sender{
-    font-family:"IBM Plex Sans",sans-serif;font-weight:600;
-    font-size:1.2rem;letter-spacing:-.01em;line-height:1.2;display:inline;
+    font-weight:600;
+    font-size:1.2rem;letter-spacing:-.015em;line-height:1.2;display:inline;
     background:linear-gradient(transparent 58%, var(--hl) 58%, var(--hl) 94%, transparent 94%);
     background-size:0% 100%;background-repeat:no-repeat;padding:0 2px;
     animation:highlight .6s ease forwards;
   }
   .recipient{
-    font-family:"IBM Plex Sans",sans-serif;font-weight:600;
-    font-size:1.2rem;letter-spacing:-.01em;line-height:1.2;display:inline;
-    background:linear-gradient(transparent 58%, var(--pcolor,#e7e0d2) 58%, var(--pcolor,#e7e0d2) 94%, transparent 94%);
+    font-weight:600;
+    font-size:1.2rem;letter-spacing:-.015em;line-height:1.2;display:inline;
+    background:linear-gradient(transparent 58%, var(--pcolor,#e8e8ed) 58%, var(--pcolor,#e8e8ed) 94%, transparent 94%);
     background-size:0% 100%;background-repeat:no-repeat;padding:0 2px;
     animation:highlight .6s ease forwards;
   }
   .recipient.unknown{font-weight:500;font-style:italic;font-size:1rem;color:var(--ink-soft);background:none;animation:none}
-  .desc{margin-top:8px;font-size:.95rem;color:#3f3a32}
+  .desc{margin-top:8px;font-size:.98rem;color:var(--ink-soft);line-height:1.45}
   .tracking{
-    margin-top:10px;font-family:"IBM Plex Mono",monospace;font-size:.78rem;
+    margin-top:12px;font-size:.9rem;font-weight:500;
     color:var(--teal);text-decoration:none;display:inline-block;
-    border-bottom:1px dotted var(--teal);
   }
+  .tracking:hover{text-decoration:underline}
+
+  /* Tags: Apple pill style, quiet by default */
   .tags{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
   .tag{
-    font-family:"IBM Plex Mono",monospace;font-size:.62rem;font-weight:600;
-    letter-spacing:.08em;text-transform:uppercase;padding:3px 8px;border-radius:999px;white-space:nowrap;
+    font-size:.68rem;font-weight:600;
+    letter-spacing:0;text-transform:none;padding:4px 11px;border-radius:999px;white-space:nowrap;
   }
   .tag.imp{color:#fff}
   .tag.cat{background:var(--paper);border:1px solid var(--line);color:var(--ink-soft)}
   .tag.conf{background:transparent;border:1px dashed var(--line);color:var(--ink-soft)}
   .tag.action{background:var(--stamp);color:#fff}
   .tag.pkg{background:var(--teal);color:#fff}
-  .lvl-low   { border-left-color:var(--low) }        .lvl-low   .tag.imp{background:var(--low)}
+  .lvl-low   { border-left-color:var(--low) }        .lvl-low    .tag.imp{background:var(--low)}
   .lvl-notable{ border-left-color:var(--notable) }    .lvl-notable .tag.imp{background:var(--notable)}
-  .lvl-urgent{ border-left-color:var(--urgent) }      .lvl-urgent .tag.imp{background:var(--urgent)}
+  .lvl-urgent{ border-left-color:var(--urgent) }      .lvl-urgent  .tag.imp{background:var(--urgent)}
   .pkg-card{border-left-color:var(--teal)}
-  .is-promo{opacity:.62}
+  .is-promo{opacity:.6}
   .is-promo .sender{font-style:italic}
   .stamp{
-    position:absolute;top:14px;right:16px;
-    font-family:"IBM Plex Mono",monospace;font-size:.6rem;font-weight:600;
-    letter-spacing:.18em;color:var(--stamp);
-    border:1.5px solid var(--stamp);border-radius:4px;padding:2px 6px;
-    transform:rotate(4deg);opacity:.8;
+    position:absolute;top:16px;right:18px;
+    font-size:.62rem;font-weight:600;
+    letter-spacing:.06em;color:var(--stamp);
+    border:1.5px solid var(--stamp);border-radius:6px;padding:2px 7px;
+    opacity:.85;
   }
   .empty{
-    text-align:center;padding:60px 20px;color:var(--ink-soft);
-    font-family:"Fraunces",serif;font-size:1.3rem;
+    text-align:center;padding:70px 20px;color:var(--ink-soft);
+    font-size:1.25rem;font-weight:500;letter-spacing:-.01em;
   }
+
+  /* Promo toggle: Apple pill button */
   .promo-toggle{
-    width:100%;margin:6px 0 14px;padding:12px 16px;
-    background:var(--paper-2);border:1px dashed var(--line);border-radius:10px;
-    font-family:"IBM Plex Mono",monospace;font-size:.72rem;font-weight:600;
-    letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft);
+    width:100%;margin:8px 0 14px;padding:14px 16px;
+    background:var(--paper-2);border:1px solid var(--line);border-radius:14px;
+    font-size:.9rem;font-weight:500;
+    letter-spacing:0;text-transform:none;color:var(--teal);
     cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;
-    transition:background .15s ease,color .15s ease;
+    transition:background .15s ease;
   }
-  .promo-toggle:hover{background:var(--paper);color:var(--ink)}
+  .promo-toggle:hover{background:var(--paper)}
   .promo-toggle .chev{transition:transform .2s ease}
   .promo-toggle.open .chev{transform:rotate(180deg)}
   #promos-region{display:none}
@@ -164,9 +175,13 @@
      get stuck invisible (the entrance fade "plays" while hidden otherwise). */
   #promos-region .card{animation:none !important;opacity:1 !important}
   #promos-region .sender,#promos-region .recipient{animation:none !important;background-size:100% 100% !important}
+
   @keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
   @keyframes highlight{from{background-size:0% 100%}to{background-size:100% 100%}}
-  @media(max-width:520px){.stats{grid-template-columns:1fr 1fr 1fr}.stat b{font-size:1.5rem}}
+  @media(max-width:520px){
+    .stats.stats-2{grid-template-columns:1fr 1fr}
+    .stat b{font-size:1.9rem}
+  }
 </style>
 </head>
 <body>
