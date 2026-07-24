@@ -561,7 +561,7 @@ def send_push(headline, items):
 
     if packages:
         word = "package" if len(packages) == 1 else "packages"
-        lines.append(f"📦 {len(packages)} {word}:")
+        lines.append(f"{len(packages)} {word}:")
         for p in packages:
             sender = p.get("sender", "Unknown")
             expected = p.get("expected", "unknown")
@@ -572,7 +572,7 @@ def send_push(headline, items):
 
     if mail:
         word = "mail" if len(mail) == 1 else "mails"
-        lines.append(f"✉️ {len(mail)} {word}:")
+        lines.append(f"{len(mail)} {word}:")
         for m in mail:
             sender = m.get("sender", "Unknown")
             recipient = m.get("recipient", "")
