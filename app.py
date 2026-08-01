@@ -957,6 +957,19 @@ def push_unsubscribe():
     return "OK", 204
 
 
+@app.route("/push-status")
+def push_status():
+    """Read-only diagnostics: is web push configured, how many subscribers are
+    registered right now (and persisted on this container's disk)."""
+    return Response(
+        json.dumps({
+            "enabled": web_push_enabled(),
+            "subscribers": len(load_push_subscriptions()),
+        }),
+        mimetype="application/json",
+    )
+
+
 @app.route("/today.json")
 def today_json():
     """Raw JSON, used by the page's auto-refresh on visibility change."""
@@ -979,6 +992,10 @@ def today_json():
 @app.route("/", methods=["GET"])
 def home():
     return "Mail webhook is running. Open /today to see today's mail. 📬"
+
+
+print(f"  🔔 Web push: {'enabled' if web_push_enabled() else 'NOT configured'}; "
+      f"{len(load_push_subscriptions())} subscriber(s) loaded")
 
 
 if __name__ == "__main__":
