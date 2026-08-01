@@ -179,26 +179,27 @@ def send_web_push(title, body, click_url=None):
         print("  ⏭️  Web push skipped (no subscribers)")
         return
     try:
-        from pywebpush import WebPusher, WebPushException
+        from pywebpush import webpush, WebPushException
     except Exception as e:
         print(f"  ⚠️  Web push unavailable (pywebpush not installed): {e}")
         return
 
-    payload = {
+    payload = json.dumps({
         "title": title,
         "body": body,
         "url": click_url or f"{PUBLIC_URL}/today",
-    }
-    claims = {"sub": f"mailto:{WEB_PUSH_EMAIL}"}
+    })
     kept = []
     for sub in subs:
         endpoint = (sub.get("endpoint") or "?")[:60]
         try:
-            WebPusher(sub).send(
-                payload,
+            webpush(
+                subscription_info=sub,
+                data=payload,
                 vapid_private_key=WEB_PUSH_PRIVATE_KEY,
-                vapid_claims=claims,
+                vapid_claims={"sub": f"mailto:{WEB_PUSH_EMAIL}"},
                 ttl=86400,
+                timeout=10,
             )
             print(f"  🔔 web push sent -> {endpoint}...")
             kept.append(sub)
