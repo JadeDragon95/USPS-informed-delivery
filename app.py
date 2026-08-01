@@ -39,8 +39,10 @@ import json
 import base64
 import hashlib
 import hmac
+import random
 import socket
 import threading
+import time
 import html as html_lib
 from datetime import datetime
 
@@ -538,17 +540,31 @@ def build_headline(items, mail_count=None, package_count=None):
     return "You have " + body + " today."
 
 
-def ntfy_post(text, click=None):
+def ntfy_post(text, click=None, retries=3):
     """Dead-simple ntfy push: one POST of plain UTF-8 text to the topic URL.
     `click` (optional) sets ntfy's Click header, so TAPPING the notification
     opens that URL — the link never has to appear in the message body.
-    The HTTP status is logged so a failure shows up clearly in the Railway logs."""
+    The HTTP status is logged so a failure shows up clearly in the Railway logs.
+
+    Retries with exponential backoff: ntfy.sh is a single-DO-droplet public
+    server that rate-limits and can temporarily firewall egress IPs (Railway
+    egress IPs are shared, so the ban can land even if we didn't trip it).
+    Connect timeouts are often transient, so 2 quick retries usually ride it
+    out — but a hard firewall drop will still fail (and isn't fatal)."""
     headers = {"Click": click} if click else None
-    try:
-        r = requests.post(NTFY_URL, data=text.encode("utf-8"), headers=headers, timeout=15)
-        print(f"  🔔 ntfy push -> HTTP {r.status_code}")
-    except Exception as e:
-        print(f"  ⚠️  ntfy push failed (not fatal): {e}")
+    last_exc = None
+    for attempt in range(1, retries + 1):
+        try:
+            r = requests.post(NTFY_URL, data=text.encode("utf-8"), headers=headers, timeout=15)
+            print(f"  🔔 ntfy push -> HTTP {r.status_code}")
+            return
+        except Exception as e:
+            last_exc = e
+            if attempt < retries:
+                wait = 2 ** (attempt - 1) + random.random()
+                print(f"  ⚠️  ntfy push attempt {attempt}/{retries} failed: {e}; retrying in {wait:.1f}s")
+                time.sleep(wait)
+    print(f"  ⚠️  ntfy push failed after {retries} attempts (not fatal): {last_exc}")
 
 
 def send_push(headline, items):
