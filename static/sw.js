@@ -6,7 +6,7 @@
  *  - /today.json is network-first too: offline keeps the last known digest.
  *  - Static assets are cache-first (they never change).
  */
-const CACHE = "usps-today-v2";
+const CACHE = "usps-today-v3";
 const APP_SHELL = [
   "/",
   "/today",
@@ -20,7 +20,10 @@ const APP_SHELL = [
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE)
-      .then((cache) => cache.addAll(APP_SHELL))
+      /* Pre-cache must NEVER block activation: if any fetch fails (flaky
+         network, iOS hiccup), swallow it and let the worker activate anyway.
+         The cache fills itself lazily through the fetch handler below. */
+      .then((cache) => cache.addAll(APP_SHELL).catch(() => {}))
       .then(() => self.skipWaiting())
   );
 });

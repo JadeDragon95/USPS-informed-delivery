@@ -504,11 +504,24 @@ function withTimeout(promise, ms, label){
   ]);
 }
 
+/* Poll for a registration with an ACTIVE worker. More reliable than
+   navigator.serviceWorker.ready, which can hang on iOS when a registration
+   is stuck mid-install. */
+async function getActiveWorker(ms){
+  const deadline = Date.now() + ms;
+  while(Date.now() < deadline){
+    const reg = await navigator.serviceWorker.getRegistration();
+    if(reg && reg.active) return reg;
+    await new Promise(r => setTimeout(r, 500));
+  }
+  throw new Error("service worker activation (timed out)");
+}
+
 async function syncPushSubscription(){
   const btn = document.getElementById("push-btn");
   if(!btn) return;
   try{
-    const reg = await withTimeout(navigator.serviceWorker.ready, 12000, "service worker activation");
+    const reg = await withTimeout(getActiveWorker(15000), 16000, "service worker activation");
     let sub = await withTimeout(reg.pushManager.getSubscription(), 8000, "reading subscription");
     if(sub){
       /* Already subscribed — re-register with the server on every load. */
