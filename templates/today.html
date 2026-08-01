@@ -5,8 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <!-- PWA polish: blend the iOS status bar into the page when home-screen installed -->
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Today's Mail">
 <meta name="theme-color" content="#f5f5f7">
+<link rel="manifest" href="/static/manifest.webmanifest">
+<link rel="icon" type="image/png" href="/static/icons/icon-192.png">
+<link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
 <title>Today's Mail</title>
 <style>
   :root{
@@ -444,6 +449,14 @@ window.addEventListener("pageshow", e => {
   // e.persisted === true means Safari just restored a cached snapshot.
   if(e.persisted) refreshFromServer();
 });
+
+/* PWA: register the service worker so iOS Safari offers "Add to Home
+   Screen" and the app shell keeps working offline. */
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/static/sw.js").catch(() => {});
+  });
+}
 </script>
 </body>
 </html>
