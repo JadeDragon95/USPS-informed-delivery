@@ -500,11 +500,6 @@ function setPushStatus(msg){
 async function syncPushSubscription(){
   const btn = document.getElementById("push-btn");
   if(!btn) return;
-  if(Notification.permission === "denied"){
-    btn.style.display = "none";
-    setPushStatus("Notifications are blocked — enable them in iOS Settings for this app.");
-    return;
-  }
   try{
     const reg = await navigator.serviceWorker.ready;
     let sub = await reg.pushManager.getSubscription();
@@ -530,13 +525,43 @@ async function syncPushSubscription(){
       }
     }else{
       btn.style.display = "block";
-      setPushStatus("");
     }
   }catch(e){
     btn.style.display = "block";
     setPushStatus("Push setup issue: " + (e && e.message ? e.message : e));
   }
 }
+
+/* True when opened from the installed home-screen app (not a Safari tab). */
+const IS_STANDALONE = (navigator.standalone === true) ||
+                      (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
+
+function initPushUI(){
+  const btn = document.getElementById("push-btn");
+  if(!btn) return;
+  const supported = PUSH_PUBLIC_KEY &&
+                    "serviceWorker" in navigator &&
+                    "PushManager" in window &&
+                    "Notification" in window;
+  if(!supported){
+    btn.style.display = "none";
+    setPushStatus("Web push needs iOS 16.4+ and this page installed to the Home Screen.");
+    return;
+  }
+  if(Notification.permission === "denied"){
+    btn.style.display = "none";
+    setPushStatus("Notifications are blocked — enable them in iOS Settings for this app.");
+  }else if(Notification.permission === "granted"){
+    btn.style.display = "none";
+    setPushStatus("Syncing notifications…");
+    syncPushSubscription();
+  }else{
+    btn.style.display = "block"; /* show immediately, BEFORE the SW is ready */
+    setPushStatus(IS_STANDALONE ? "" : "Open this from your Home Screen app, then tap Enable.");
+  }
+}
+
+initPushUI();
 
 if(PUSH_PUBLIC_KEY && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window){
   window.addEventListener("load", () => {
@@ -547,13 +572,12 @@ if(PUSH_PUBLIC_KEY && "serviceWorker" in navigator && "PushManager" in window &&
   document.getElementById("push-btn").addEventListener("click", async () => {
     const perm = await Notification.requestPermission();
     if(perm === "granted"){
+      setPushStatus("Syncing notifications…");
       syncPushSubscription();
     }else if(perm === "default"){
-      setPushStatus("Add this page to your Home Screen, open it from there, then tap the button.");
+      setPushStatus(IS_STANDALONE ? "Tap the button again." : "Open this from your Home Screen app, then tap Enable.");
     }
   });
-}else{
-  setPushStatus("Web push needs iOS 16.4+ and this page installed to the Home Screen.");
 }
 </script>
 </body>
