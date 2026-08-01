@@ -196,6 +196,12 @@
     font-family:inherit;-webkit-tap-highlight-color:transparent;
   }
   .push-btn:hover{filter:brightness(1.08)}
+  .push-status{
+    position:fixed;right:18px;bottom:74px;z-index:50;
+    max-width:280px;background:var(--paper-2);border:1px solid var(--line);
+    border-radius:12px;padding:10px 14px;font-size:.78rem;line-height:1.4;
+    color:var(--ink-soft);box-shadow:var(--shadow);display:none;text-align:right;
+  }
 </style>
 </head>
 <body>
@@ -219,6 +225,7 @@
   <div id="items"></div>
 </div>
 
+<p class="push-status" id="push-status"></p>
 <button class="push-btn" id="push-btn">🔔 Enable notifications</button>
 
 <script>
@@ -475,56 +482,78 @@ function urlBase64ToUint8Array(base64String){
   return new Uint8Array([...raw].map(c => c.charCodeAt(0)));
 }
 
+async function postSubscription(sub){
+  await fetch("/push-subscribe", {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify(sub.toJSON())
+  });
+}
+
+function setPushStatus(msg){
+  const el = document.getElementById("push-status");
+  if(!el) return;
+  el.textContent = msg || "";
+  el.style.display = msg ? "block" : "none";
+}
+
 async function syncPushSubscription(){
   const btn = document.getElementById("push-btn");
   if(!btn) return;
   if(Notification.permission === "denied"){
-    btn.style.display = "none"; /* can't re-ask — enable in iOS Settings */
+    btn.style.display = "none";
+    setPushStatus("Notifications are blocked — enable them in iOS Settings for this app.");
     return;
-  }
-  if(Notification.permission === "default"){
-    btn.style.display = "block"; /* show the button BEFORE the SW is ready */
   }
   try{
     const reg = await navigator.serviceWorker.ready;
     let sub = await reg.pushManager.getSubscription();
+    if(sub){
+      /* Already subscribed — re-register with the server on every load. */
+      await postSubscription(sub);
+      btn.style.display = "none";
+      setPushStatus("Notifications on ✓");
+      return;
+    }
     if(Notification.permission === "granted"){
-      if(!sub){
+      try{
         sub = await reg.pushManager.subscribe({
           userVisibleOnly:true,
           applicationServerKey: urlBase64ToUint8Array(PUSH_PUBLIC_KEY)
         });
+        await postSubscription(sub);
+        btn.style.display = "none";
+        setPushStatus("Notifications on ✓");
+      }catch(e){
+        btn.style.display = "block";
+        setPushStatus("Tap the button to finish enabling (" + e.name + ")");
       }
-      await fetch("/push-subscribe", {
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body: JSON.stringify(sub.toJSON())
-      });
-      btn.style.display = "none";
-    } else if(Notification.permission === "default"){
+    }else{
       btn.style.display = "block";
+      setPushStatus("");
     }
-  }catch(e){ /* push unavailable or refused — stay quiet */ }
+  }catch(e){
+    btn.style.display = "block";
+    setPushStatus("Push setup issue: " + (e && e.message ? e.message : e));
+  }
 }
 
 if(PUSH_PUBLIC_KEY && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window){
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("/static/sw.js")
       .then(() => syncPushSubscription())
-      .catch(() => {});
+      .catch((e) => setPushStatus("Service worker failed to start: " + (e && e.message ? e.message : e)));
   });
   document.getElementById("push-btn").addEventListener("click", async () => {
     const perm = await Notification.requestPermission();
     if(perm === "granted"){
       syncPushSubscription();
-    } else if(perm === "default"){
-      /* iOS silently ignores the request outside the installed web app */
-      const btn = document.getElementById("push-btn");
-      const old = btn.textContent;
-      btn.textContent = "Add to Home Screen, reopen, then tap";
-      setTimeout(() => { btn.textContent = old; }, 3500);
+    }else if(perm === "default"){
+      setPushStatus("Add this page to your Home Screen, open it from there, then tap the button.");
     }
   });
+}else{
+  setPushStatus("Web push needs iOS 16.4+ and this page installed to the Home Screen.");
 }
 </script>
 </body>
