@@ -72,6 +72,14 @@ NTFY_URL = os.environ.get("NTFY_URL", "https://ntfy.sh/usps_informed_delivery")
 PUBLIC_URL = os.environ.get("PUBLIC_URL", "https://web-production-0d2b6.up.railway.app")
 TIMEZONE = os.environ.get("TIMEZONE", "America/New_York")
 
+# --- Web Push (browser notifications for the /today PWA) -------------------
+# Optional: set these to let the installed /today PWA receive the same digest
+# content as a browser notification whenever new mail is processed.
+# Generate keys with: npx web-push generate-vapid-keys
+WEB_PUSH_PUBLIC_KEY = os.environ.get("WEB_PUSH_PUBLIC_KEY", "")
+WEB_PUSH_PRIVATE_KEY = os.environ.get("WEB_PUSH_PRIVATE_KEY", "")
+WEB_PUSH_EMAIL = os.environ.get("WEB_PUSH_EMAIL", "")
+
 OPENAI_MODEL = "gpt-5.4-mini"
 
 # Skip images under 5 KB — those are logos/spacers/tracking pixels, not
@@ -128,6 +136,84 @@ def save_latest_mail(data):
     with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(data, fh)
     os.replace(tmp, DATA_FILE)
+
+
+def web_push_enabled():
+    """Web push needs a VAPID keypair + contact email."""
+    return bool(WEB_PUSH_PUBLIC_KEY and WEB_PUSH_PRIVATE_KEY and WEB_PUSH_EMAIL)
+
+
+def load_push_subscriptions():
+    """Browser push subscriptions persisted next to the digest data."""
+    path = os.path.join(DATA_DIR, "push_subscriptions.json")
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            subs = json.load(fh)
+        return subs if isinstance(subs, list) else []
+    except Exception:
+        return []
+
+
+def save_push_subscriptions(subs):
+    """Atomically persist the subscription list (same pattern as the digest)."""
+    path = os.path.join(DATA_DIR, "push_subscriptions.json")
+    try:
+        os.makedirs(DATA_DIR, exist_ok=True)
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(subs, fh)
+        os.replace(tmp, path)
+    except Exception as e:
+        print(f"  ⚠️  Could not persist push subscriptions: {e}")
+
+
+def send_web_push(title, body, click_url=None):
+    """Send the digest/delivery content as a browser notification to every
+    subscribed PWA client. Uses the SAME content as the ntfy push.
+    Expired subscriptions (404/410) are pruned; anything else is logged but
+    never fatal."""
+    if not web_push_enabled():
+        return
+    subs = load_push_subscriptions()
+    if not subs:
+        print("  ⏭️  Web push skipped (no subscribers)")
+        return
+    try:
+        from pywebpush import WebPusher, WebPushException
+    except Exception as e:
+        print(f"  ⚠️  Web push unavailable (pywebpush not installed): {e}")
+        return
+
+    payload = {
+        "title": title,
+        "body": body,
+        "url": click_url or f"{PUBLIC_URL}/today",
+    }
+    claims = {"sub": f"mailto:{WEB_PUSH_EMAIL}"}
+    kept = []
+    for sub in subs:
+        endpoint = (sub.get("endpoint") or "?")[:60]
+        try:
+            WebPusher(sub).send(
+                payload,
+                vapid_private_key=WEB_PUSH_PRIVATE_KEY,
+                vapid_claims=claims,
+                ttl=86400,
+            )
+            print(f"  🔔 web push sent -> {endpoint}...")
+            kept.append(sub)
+        except WebPushException as e:
+            resp = getattr(e, "response", None)
+            code = resp.status_code if resp is not None else None
+            if code in (404, 410):
+                print(f"  🗑️  Dropped expired web push subscription ({code}): {endpoint}...")
+            else:
+                print(f"  ⚠️  web push failed ({code}): {e}")
+                kept.append(sub)
+        except Exception as e:
+            print(f"  ⚠️  web push failed: {e}")
+            kept.append(sub)
+    save_push_subscriptions(kept)
 
 
 def verify_mailgun_signature(token, timestamp, signature):
@@ -605,6 +691,7 @@ def send_push(headline, items):
 
     body = "\n".join(lines) if lines else "No mail or packages today."
     ntfy_post(body, click=f"{PUBLIC_URL}/today")
+    send_web_push("Today's Mail", body, click_url=f"{PUBLIC_URL}/today")
 
 
 def parse_delivery_alert(subject, body_text):
@@ -666,6 +753,7 @@ def send_delivery_alert_push(alert):
     )
 
     ntfy_post(f"{title}\n{body}", click=usps_url)
+    send_web_push(title, body, click_url=usps_url)
 
 
 @app.route("/mail-arrived", methods=["POST"])
@@ -818,11 +906,55 @@ def today():
         "updated_at": data.get("updated_at"),
     })
     html = html.replace("__MAIL_DATA__", payload)
+    html = html.replace("__PUSH_PUBLIC_KEY__", json.dumps(WEB_PUSH_PUBLIC_KEY))
     resp = Response(html, mimetype="text/html")
     resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0, private"
     resp.headers["Pragma"] = "no-cache"
     resp.headers["Expires"] = "0"
     return resp
+
+
+@app.route("/push-subscribe", methods=["POST"])
+def push_subscribe():
+    """Register a browser push subscription from the /today PWA."""
+    try:
+        payload = request.get_json(silent=True) or {}
+    except Exception:
+        payload = {}
+    endpoint = payload.get("endpoint", "")
+    keys = payload.get("keys") or {}
+    if (
+        not isinstance(endpoint, str)
+        or not endpoint
+        or len(endpoint) > 2048
+        or not isinstance(keys, dict)
+        or not keys.get("p256dh")
+        or not keys.get("auth")
+    ):
+        return "Bad Request", 400
+    subs = [s for s in load_push_subscriptions() if s.get("endpoint") != endpoint]
+    subs.append({
+        "endpoint": endpoint,
+        "keys": {"p256dh": keys["p256dh"], "auth": keys["auth"]},
+    })
+    save_push_subscriptions(subs)
+    print(f"  🔔 Saved web push subscription: {endpoint[:60]}...")
+    return "OK", 204
+
+
+@app.route("/push-unsubscribe", methods=["POST"])
+def push_unsubscribe():
+    """Remove a browser push subscription (PWA unsubscribed / revoked)."""
+    try:
+        payload = request.get_json(silent=True) or {}
+    except Exception:
+        payload = {}
+    endpoint = payload.get("endpoint", "")
+    if isinstance(endpoint, str) and endpoint:
+        subs = [s for s in load_push_subscriptions() if s.get("endpoint") != endpoint]
+        save_push_subscriptions(subs)
+        print(f"  🔕 Removed web push subscription: {endpoint[:60]}...")
+    return "OK", 204
 
 
 @app.route("/today.json")

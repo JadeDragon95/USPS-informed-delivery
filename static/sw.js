@@ -6,7 +6,7 @@
  *  - /today.json is network-first too: offline keeps the last known digest.
  *  - Static assets are cache-first (they never change).
  */
-const CACHE = "usps-today-v1";
+const CACHE = "usps-today-v2";
 const APP_SHELL = [
   "/",
   "/today",
@@ -83,5 +83,39 @@ self.addEventListener("fetch", (event) => {
           return res;
         })
     )
+  );
+});
+
+/* Web Push: the server sends {title, body, url} (same content as the ntfy
+   push); show it as a system notification. */
+self.addEventListener("push", (event) => {
+  let data = {};
+  try{
+    data = event.data ? event.data.json() : {};
+  }catch(e){ /* non-JSON payload — fall back to defaults */ }
+  const options = {
+    body: data.body || "You have new mail.",
+    icon: "/static/icons/icon-192.png",
+    badge: "/static/icons/icon-192.png",
+    data: { url: data.url || "/today" },
+    vibrate: [100, 50, 100]
+  };
+  event.waitUntil(self.registration.showNotification(data.title || "Today's Mail", options));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || "/today";
+  event.waitUntil(
+    clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
+      for(const client of list){
+        if("focus" in client){
+          client.focus();
+          if("navigate" in client) client.navigate(url);
+          return;
+        }
+      }
+      return clients.openWindow(url);
+    })
   );
 });

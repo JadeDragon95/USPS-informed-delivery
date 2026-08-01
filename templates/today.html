@@ -187,6 +187,15 @@
     .stats.stats-2{grid-template-columns:1fr 1fr}
     .stat b{font-size:1.9rem}
   }
+  /* Web Push: floating enable-notifications button, only shown when needed */
+  .push-btn{
+    position:fixed;right:18px;bottom:18px;z-index:50;
+    background:var(--teal);color:#fff;border:none;border-radius:999px;
+    padding:13px 20px;font-size:.9rem;font-weight:600;cursor:pointer;
+    box-shadow:0 6px 20px rgba(0,113,227,.35);display:none;
+    font-family:inherit;-webkit-tap-highlight-color:transparent;
+  }
+  .push-btn:hover{filter:brightness(1.08)}
 </style>
 </head>
 <body>
@@ -210,10 +219,13 @@
   <div id="items"></div>
 </div>
 
+<button class="push-btn" id="push-btn">🔔 Enable notifications</button>
+
 <script>
 /* Data is injected live by the Flask server (see app.py /today route).
    The __MAIL_DATA__ placeholder is replaced with today's JSON. */
 const MAIL_DATA = __MAIL_DATA__;
+const PUSH_PUBLIC_KEY = __PUSH_PUBLIC_KEY__;
 
 const CATEGORY_ICON = {
   medical:"🏥", advertising:"📣", financial:"💳", bill:"🧾",
@@ -450,11 +462,52 @@ window.addEventListener("pageshow", e => {
   if(e.persisted) refreshFromServer();
 });
 
-/* PWA: register the service worker so iOS Safari offers "Add to Home
-   Screen" and the app shell keeps working offline. */
-if ("serviceWorker" in navigator) {
+/* -------------------------------------------------------------------------
+   PWA: register the service worker (offline app shell) and set up Web Push
+   so the installed /today app gets a browser notification whenever a new
+   digest is processed — same content as the ntfy push. iOS Safari only
+   allows requesting permission from a tap, hence the floating button.
+   ------------------------------------------------------------------------- */
+function urlBase64ToUint8Array(base64String){
+  const padding = "=".repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(base64);
+  return new Uint8Array([...raw].map(c => c.charCodeAt(0)));
+}
+
+async function syncPushSubscription(){
+  const btn = document.getElementById("push-btn");
+  try{
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if(Notification.permission === "granted"){
+      if(!sub){
+        sub = await reg.pushManager.subscribe({
+          userVisibleOnly:true,
+          applicationServerKey: urlBase64ToUint8Array(PUSH_PUBLIC_KEY)
+        });
+      }
+      await fetch("/push-subscribe", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify(sub.toJSON())
+      });
+      if(btn) btn.style.display = "none";
+    } else if(Notification.permission === "default" && btn){
+      btn.style.display = "block";
+    }
+  }catch(e){ /* push unavailable or refused — stay quiet */ }
+}
+
+if(PUSH_PUBLIC_KEY && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window){
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/static/sw.js").catch(() => {});
+    navigator.serviceWorker.register("/static/sw.js")
+      .then(() => syncPushSubscription())
+      .catch(() => {});
+  });
+  document.getElementById("push-btn").addEventListener("click", async () => {
+    const perm = await Notification.requestPermission();
+    if(perm === "granted") syncPushSubscription();
   });
 }
 </script>
