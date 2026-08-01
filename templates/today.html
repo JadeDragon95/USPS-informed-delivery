@@ -477,6 +477,14 @@ function urlBase64ToUint8Array(base64String){
 
 async function syncPushSubscription(){
   const btn = document.getElementById("push-btn");
+  if(!btn) return;
+  if(Notification.permission === "denied"){
+    btn.style.display = "none"; /* can't re-ask — enable in iOS Settings */
+    return;
+  }
+  if(Notification.permission === "default"){
+    btn.style.display = "block"; /* show the button BEFORE the SW is ready */
+  }
   try{
     const reg = await navigator.serviceWorker.ready;
     let sub = await reg.pushManager.getSubscription();
@@ -492,8 +500,8 @@ async function syncPushSubscription(){
         headers:{"Content-Type":"application/json"},
         body: JSON.stringify(sub.toJSON())
       });
-      if(btn) btn.style.display = "none";
-    } else if(Notification.permission === "default" && btn){
+      btn.style.display = "none";
+    } else if(Notification.permission === "default"){
       btn.style.display = "block";
     }
   }catch(e){ /* push unavailable or refused — stay quiet */ }
@@ -507,7 +515,15 @@ if(PUSH_PUBLIC_KEY && "serviceWorker" in navigator && "PushManager" in window &&
   });
   document.getElementById("push-btn").addEventListener("click", async () => {
     const perm = await Notification.requestPermission();
-    if(perm === "granted") syncPushSubscription();
+    if(perm === "granted"){
+      syncPushSubscription();
+    } else if(perm === "default"){
+      /* iOS silently ignores the request outside the installed web app */
+      const btn = document.getElementById("push-btn");
+      const old = btn.textContent;
+      btn.textContent = "Add to Home Screen, reopen, then tap";
+      setTimeout(() => { btn.textContent = old; }, 3500);
+    }
   });
 }
 </script>
