@@ -497,26 +497,37 @@ function setPushStatus(msg){
   el.style.display = msg ? "block" : "none";
 }
 
+function withTimeout(promise, ms, label){
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(label + " (timed out)")), ms))
+  ]);
+}
+
 async function syncPushSubscription(){
   const btn = document.getElementById("push-btn");
   if(!btn) return;
   try{
-    const reg = await navigator.serviceWorker.ready;
-    let sub = await reg.pushManager.getSubscription();
+    const reg = await withTimeout(navigator.serviceWorker.ready, 12000, "service worker activation");
+    let sub = await withTimeout(reg.pushManager.getSubscription(), 8000, "reading subscription");
     if(sub){
       /* Already subscribed — re-register with the server on every load. */
-      await postSubscription(sub);
+      await withTimeout(postSubscription(sub), 8000, "registering with server");
       btn.style.display = "none";
       setPushStatus("Notifications on ✓");
       return;
     }
     if(Notification.permission === "granted"){
       try{
-        sub = await reg.pushManager.subscribe({
-          userVisibleOnly:true,
-          applicationServerKey: urlBase64ToUint8Array(PUSH_PUBLIC_KEY)
-        });
-        await postSubscription(sub);
+        sub = await withTimeout(
+          reg.pushManager.subscribe({
+            userVisibleOnly:true,
+            applicationServerKey: urlBase64ToUint8Array(PUSH_PUBLIC_KEY)
+          }),
+          15000,
+          "push subscription"
+        );
+        await withTimeout(postSubscription(sub), 8000, "registering with server");
         btn.style.display = "none";
         setPushStatus("Notifications on ✓");
       }catch(e){
@@ -528,7 +539,7 @@ async function syncPushSubscription(){
     }
   }catch(e){
     btn.style.display = "block";
-    setPushStatus("Push setup issue: " + (e && e.message ? e.message : e));
+    setPushStatus("Push setup issue: " + (e && e.message ? e.message : e) + " — close and reopen the app.");
   }
 }
 
@@ -567,7 +578,7 @@ if(PUSH_PUBLIC_KEY && "serviceWorker" in navigator && "PushManager" in window &&
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("/static/sw.js")
       .then(() => syncPushSubscription())
-      .catch((e) => setPushStatus("Service worker failed to start: " + (e && e.message ? e.message : e)));
+      .catch((e) => setPushStatus("Service worker failed to start: " + (e && e.message ? e.message : e) + " — close and reopen the app."));
   });
   document.getElementById("push-btn").addEventListener("click", async () => {
     const perm = await Notification.requestPermission();
