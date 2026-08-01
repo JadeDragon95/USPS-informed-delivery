@@ -6,12 +6,12 @@
  *  - /today.json is network-first too: offline keeps the last known digest.
  *  - Static assets are cache-first (they never change).
  */
-const CACHE = "usps-today-v3";
+const CACHE = "usps-today-v4";
 const APP_SHELL = [
   "/",
   "/today",
   "/static/manifest.webmanifest",
-  "/static/sw.js",
+  "/sw.js",
   "/static/icons/apple-touch-icon.png",
   "/static/icons/icon-192.png",
   "/static/icons/icon-512.png"

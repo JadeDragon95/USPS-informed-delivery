@@ -587,12 +587,23 @@ function initPushUI(){
 
 initPushUI();
 
-if(PUSH_PUBLIC_KEY && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window){
+const PUSH_SUPPORTED = PUSH_PUBLIC_KEY && "PushManager" in window && "Notification" in window;
+
+if("serviceWorker" in navigator){
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/static/sw.js")
-      .then(() => syncPushSubscription())
+    /* Scope "/" is required: without it the worker only controls /static/*. */
+    navigator.serviceWorker.register("/sw.js", { scope: "/" })
+      .then((reg) => {
+        /* Drop the old /static-scoped registrations from earlier builds. */
+        navigator.serviceWorker.getRegistrations().then((regs) => {
+          regs.forEach((r) => { if(r.scope !== reg.scope) r.unregister(); });
+        });
+        if(PUSH_SUPPORTED) return syncPushSubscription();
+      })
       .catch((e) => setPushStatus("Service worker failed to start: " + (e && e.message ? e.message : e) + " — close and reopen the app."));
   });
+}
+if(PUSH_SUPPORTED){
   document.getElementById("push-btn").addEventListener("click", async () => {
     const perm = await Notification.requestPermission();
     if(perm === "granted"){

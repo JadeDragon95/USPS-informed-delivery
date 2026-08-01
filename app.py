@@ -970,6 +970,17 @@ def push_status():
     )
 
 
+@app.route("/sw.js")
+def service_worker():
+    """Serve the service worker from the site ROOT so it scopes to / and can
+    control /today. A worker served under /static/ would only ever control
+    /static/* pages — a silent no-op for the whole PWA."""
+    resp = app.send_static_file("sw.js")
+    resp.headers["Service-Worker-Allowed"] = "/"
+    resp.headers["Cache-Control"] = "no-cache, must-revalidate"
+    return resp
+
+
 @app.route("/today.json")
 def today_json():
     """Raw JSON, used by the page's auto-refresh on visibility change."""
